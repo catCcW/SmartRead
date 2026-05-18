@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@utility writing-vertical-rl {
+  writing-mode: vertical-rl;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #FAFAFA;
+  color: #1E293B;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", STHeiti, "Microsoft Yahei", Tahoma, Simsun, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* 极简滚动条 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E2E8F0;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #CBD5E1;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* 隐藏特定区域的滚动条但保留滚动 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 阅读器排版 */
+.reader-content p {
+  margin-bottom: 2em;
+  text-indent: 2em;
+  line-height: 2.4;
+  font-size: 18px;
+  color: #334155;
+  letter-spacing: 0.5px;
+}
+
+.reader-content img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 2em auto;
+  display: block;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+/* 进度条自定义 */
+.progress-bar {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #E2E8F0;
+  border-radius: 2px;
+  outline: none;
+}
+.progress-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #4F46E5;
+  cursor: pointer;
+  box-shadow: 0 0 0 4px #EEF2FF;
+}
+
+/* 高亮样式模拟 */
+.highlight-yellow {
+  background-color: rgba(253, 224, 71, 0.3);
+  border-bottom: 2px solid #FDE047;
+}
+.highlight-purple {
+  background-color: rgba(192, 132, 252, 0.2);
+  border-bottom: 2px solid #C084FC;
+}
+.highlight-green {
+  background-color: rgba(134, 239, 172, 0.2);
+  border-bottom: 2px solid #86EFAC;
+}
