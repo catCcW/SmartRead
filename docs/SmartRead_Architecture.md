@@ -2,7 +2,7 @@
 
 作为一款跨平台（Web、Mobile、Python Desktop）的智能辅助阅读系统，「智阅」的核心在于将传统的阅读体验与大语言模型（LLM）深度融合。
 
-根据您的需求，当前阶段**不涉及持久化数据库存储**，重点在于**系统架构设计、AI 智能体工作流（特别是基于上下文滑窗的动态文本标注）、RAG 检索以及思维导图的动态生成**。
+根据您的需求，当前阶段重点在于**系统架构设计、AI 智能体工作流（特别是基于上下文滑窗的动态文本标注）、RAG 检索以及思维导图的动态生成**，并已引入 **SQLite 数据库** 进行核心数据的持久化存储。
 
 ---
 
@@ -64,9 +64,18 @@
 
 ---
 
-## 三、 数据结构设计 (内存/JSON 级)
+## 三、 数据结构与持久化设计
 
-由于当前不需要保存到数据库，我们设计标准化的 JSON 结构用于前后端数据交换和内存状态管理。
+系统采用 **SQLite** 作为轻量级关系型数据库，使用 **SQLAlchemy** 作为 ORM 框架，并结合 **Pydantic** 进行数据验证和序列化。
+
+### 1. 数据库表结构 (Models)
+*   **Book**: 存储书籍元数据（标题、作者、文件路径、格式等）。
+*   **Chapter**: 存储书籍的章节信息（章节标题、索引、层级等），与 Book 是一对多关系。
+*   **Note**: 存储用户的阅读笔记（关联书籍和章节，包含原文引用和笔记内容）。
+*   **AIChatHistory**: 存储 AI 伴读的问答历史（关联书籍和章节，包含用户问题、选中文本、AI 回答及动作类型）。
+
+### 2. 数据交换格式 (Pydantic Schemas)
+以下是前后端交互的标准 JSON 结构示例：
 
 ### 1. 书籍元数据与解析结果
 ```json
@@ -206,53 +215,62 @@ def generate_mindmap_json(chapter_text: str):
 
 ---
 
-## 五、 项目目录结构设计 (Monorepo 推荐)
+## 五、 项目目录结构设计 (Monorepo)
 
-为了方便管理跨平台代码和统一的后端服务，推荐采用 Monorepo（单体仓库）结构。以下是标准的目录结构规划：
+为了方便管理跨平台代码和统一的后端服务，项目采用 Monorepo（单体仓库）结构。以下是当前的目录结构规划：
 
 ```text
-smartread/
+ai_rbook/
 ├── backend/                     # Python 核心逻辑与 AI 服务端 (FastAPI)
 │   ├── app/
-│   │   ├── api/                 # API 路由层 (RESTful / WebSocket)
-│   │   │   ├── endpoints/       # 具体的路由实现 (如 upload, chat, mindmap)
-│   │   ├── core/                # 核心配置 (环境变量、CORS、日志等)
-│   │   ├── models/              # 数据结构定义 (Pydantic schemas，对应 JSON 结构)
+│   │   ├── api/                 # API 路由层 (RESTful)
+│   │   │   ├── ai.py            # AI 伴读路由
+│   │   │   ├── books.py         # 书籍管理路由
+│   │   │   ├── config.py        # 配置管理路由
+│   │   │   ├── notes.py         # 笔记管理路由
+│   │   │   └── reader.py        # 阅读器路由
+│   │   ├── prompts/             # AI 提示词管理
+│   │   │   ├── ai_companion.py  # AI 伴读提示词
+│   │   │   └── semantic_analysis.py # 语义分析提示词
 │   │   ├── services/            # 核心业务逻辑层
 │   │   │   ├── parser/          # 文档解析服务 (PDF, EPUB, DOCX, TXT)
-│   │   │   ├── ai_agents/       # AI 智能体 (滑窗标注、章节总结)
-│   │   │   │   ├── config/      # 智能体配置 (Prompt 模板、模型参数、角色设定)
-│   │   │   │   ├── prompts.py   # 具体的 Prompt 字符串管理
-│   │   │   │   └── agents.py    # 智能体执行逻辑
-│   │   │   └── rag/             # RAG 检索服务 (切片、向量化、内存 FAISS)
-│   │   ├── utils/               # 工具函数
-│   │   └── main.py              # FastAPI 启动入口
+│   │   │   └── llm_service.py   # 大语言模型交互服务
+│   │   ├── database.py          # 数据库连接与 SQLAlchemy 模型定义
+│   │   ├── main.py              # FastAPI 启动入口
+│   │   ├── schemas.py           # Pydantic 数据验证模型
+│   │   ├── smartread.db         # SQLite 数据库文件
+│   │   └── uploads/             # 上传的书籍文件存储目录
 │   ├── requirements.txt         # Python 依赖清单
-│   └── .env.example             # 环境变量示例 (API Keys 等)
+│   └── .env                     # 环境变量配置
 │
-├── frontend-web-desktop/        # Web 端与桌面端 (React/Vue + Tauri)
+├── frontend-web-desktop/        # Web 端与桌面端 (React + Tauri)
 │   ├── src/                     # 前端 UI 源码
 │   │   ├── assets/              # 静态资源
-│   │   ├── components/          # 通用组件 (阅读器、思维导图、AI 对话框)
-│   │   ├── hooks/               # 自定义 Hooks (如 useSlidingWindow)
-│   │   ├── services/            # 后端 API 调用封装
-│   │   ├── store/               # 状态管理 (Zustand/Redux，管理当前阅读进度和高亮)
-│   │   ├── App.tsx              # 主视图
-│   │   └── main.tsx             # 前端入口
+│   │   ├── components/          # UI 组件
+│   │   │   ├── Library.tsx      # 书库组件
+│   │   │   ├── PrimaryNav.tsx   # 主导航栏
+│   │   │   ├── RightPanel.tsx   # 右侧 AI 分析与笔记面板
+│   │   │   ├── SecondarySidebar.tsx # 次级侧边栏 (目录等)
+│   │   │   └── Settings.tsx     # 设置组件
+│   │   ├── App.tsx              # 主视图与核心状态管理
+│   │   ├── main.tsx             # 前端入口
+│   │   └── index.css            # 全局样式 (Tailwind)
 │   ├── src-tauri/               # Tauri 桌面端打包配置 (Rust)
 │   ├── package.json             # Node 依赖清单
-│   └── vite.config.ts           # 构建配置
+│   └── vite.config.ts           # Vite 构建配置
 │
-├── frontend-mobile/             # 移动端 App (Flutter 推荐)
-│   ├── lib/
-│   │   ├── screens/             # 页面视图 (书架、阅读页)
-│   │   ├── widgets/             # 自定义组件 (文本高亮渲染器)
-│   │   ├── services/            # API 请求
-│   │   └── main.dart            # Flutter 启动入口
-│   └── pubspec.yaml             # Flutter 依赖清单
+├── desktop_app/                 # 旧版/独立桌面端 (Python GUI)
+│   └── main.py                  # 独立桌面端入口
 │
 ├── docs/                        # 项目文档
-│   └── SmartRead_Architecture.md# 架构设计文档
+│   ├── API_Documentation.md     # API 接口文档
+│   ├── Development_Log.md       # 开发日志
+│   ├── Prompt_Strategy_Guide.md # 提示词策略指南
+│   ├── Semantic_Reading_Prompt_Design.md # 语义阅读提示词设计
+│   ├── SmartRead_Architecture.md# 架构设计文档
+│   ├── System_Requirements_Prompt.md # 系统需求文档
+│   ├── Tech_Stack_Versions.md   # 技术栈版本说明
+│   └── UI_Design_Prompt.md      # UI 设计文档
 │
 └── README.md                    # 项目说明文件
 ```

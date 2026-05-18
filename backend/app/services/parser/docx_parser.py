@@ -13,33 +13,49 @@ class DOCXParser:
 
     def parse(self):
         """
-        解析 DOCX 文件，根据标题样式进行断章。
-        返回格式:
-        [
-            {"title": "第一章", "content": "...", "index": 0},
-            ...
-        ]
+        解析 DOCX 文件。
+        借鉴 Legado 的目录解析逻辑：
+        1. 优先使用 Word 自带的标题样式 (Heading)。
+        2. 如果没有标题样式，使用正则表达式匹配常见的中文小说章节名。
+        3. 如果正则也匹配不到，则按固定长度（段落数）进行无规则拆分。
         """
-        current_chapter_title = "前言/引子"
+        import re
+        
+        current_chapter_title = "前言"
         current_chapter_content = []
         chapter_index = 0
+        
+        # 常见的中文小说章节正则表达式 (借鉴 Legado)
+        chapter_pattern = re.compile(
+            r'^\s*(?:第)?\s*[0-9零一二三四五六七八九十百千万两]+\s*(?:章|节|回|卷|折|篇|幕|集|部分)\s*.*$|^\s*(?:序章|前言|引言|楔子|附录|后记)\s*$',
+            re.IGNORECASE
+        )
+        
+        has_any_heading = False
         
         for para in self.doc.paragraphs:
             text = para.text.strip()
             if not text:
                 continue
                 
-            # 判断是否为标题样式 (Heading 1, Heading 2 等)
-            # 或者如果段落很短且加粗，也可能被视为标题 (这里简单处理，主要依赖样式名)
-            style_name = para.style.name.lower()
+            style_name = para.style.name.lower() if para.style else ""
             
+            # 判断是否为标题
+            is_heading = False
             if 'heading' in style_name or '标题' in style_name:
+                is_heading = True
+            elif len(text) < 40 and chapter_pattern.match(text):
+                is_heading = True
+                
+            if is_heading:
+                has_any_heading = True
                 # 保存上一章
-                if current_chapter_content:
+                if current_chapter_content or current_chapter_title != "前言":
                     self.chapters.append({
                         "index": chapter_index,
                         "title": current_chapter_title,
-                        "content": "\n".join(current_chapter_content)
+                        "level": 1,
+                        "elements": [{"type": "text", "content": p} for p in current_chapter_content]
                     })
                     chapter_index += 1
                 
@@ -50,20 +66,29 @@ class DOCXParser:
                 current_chapter_content.append(text)
                 
         # 保存最后一章
-        if current_chapter_content:
+        if current_chapter_content or current_chapter_title != "前言":
             self.chapters.append({
                 "index": chapter_index,
                 "title": current_chapter_title,
-                "content": "\n".join(current_chapter_content)
+                "level": 1,
+                "elements": [{"type": "text", "content": p} for p in current_chapter_content]
             })
             
-        # 如果没有识别出任何章节，则将整个文档作为一章
-        if not self.chapters:
-            self.chapters.append({
-                "index": 0,
-                "title": "正文",
-                "content": "\n".join([p.text.strip() for p in self.doc.paragraphs if p.text.strip()])
-            })
+        # 如果没有识别出任何章节（无规则拆分目录，借鉴 Legado 的 maxLengthWithNoToc 逻辑）
+        if not has_any_heading:
+            self.chapters = []
+            valid_lines = [p.text.strip() for p in self.doc.paragraphs if p.text.strip()]
+            
+            # 假设每 100 个段落为一个分段
+            paragraphs_per_chapter = 100
+            for i in range(0, len(valid_lines), paragraphs_per_chapter):
+                chunk = valid_lines[i:i + paragraphs_per_chapter]
+                self.chapters.append({
+                    "index": i // paragraphs_per_chapter,
+                    "title": f"第 {(i // paragraphs_per_chapter) + 1} 章",
+                    "level": 1,
+                    "elements": [{"type": "text", "content": p} for p in chunk]
+                })
             
         return self.chapters
 

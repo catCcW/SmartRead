@@ -1,84 +1,348 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  BookOpen, 
-  Edit3, 
-  Network, 
-  MessageSquare, 
-  Library, 
-  Settings, 
-  Search, 
-  Type, 
-  Sun, 
-  Moon, 
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronDown, 
-  Maximize, 
-  Minus, 
-  Plus, 
-  Send, 
-  Bot, 
-  User, 
-  MoreHorizontal,
-  LayoutTemplate,
-  BookmarkPlus
+  BookOpen, Edit3, Network, MessageSquare, Settings, Sun, Moon, 
+  ChevronLeft, ChevronRight, ChevronDown, Maximize, Minus, Send, Bot, 
+  LayoutTemplate, Lightbulb, List
 } from 'lucide-react';
+import Library from './components/Library';
+import PrimaryNav from './components/PrimaryNav';
+import SecondarySidebar from './components/SecondarySidebar';
+import RightPanel from './components/RightPanel';
+import SettingsComponent from './components/Settings';
+import GlobalNotes from './components/GlobalNotes';
+import GlobalAIHistory from './components/GlobalAIHistory';
+import GlobalMindMap from './components/GlobalMindMap';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 const App = () => {
+  // UI 状态
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [activeTab, setActiveTab] = useState('阅读');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isTocExpanded, setIsTocExpanded] = useState(true);
+  const [isAiChatExpanded, setIsAiChatExpanded] = useState(false);
+  
+  // 数据状态
   const [books, setBooks] = useState<any[]>([]);
   const [currentBook, setCurrentBook] = useState<any>(null);
   const [chapters, setChapters] = useState<any[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState<number>(0);
   const [chapterContent, setChapterContent] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isTocExpanded, setIsTocExpanded] = useState(true);
+  
+  // AI 与笔记状态
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiHistory, setAiHistory] = useState<any[]>([]);
+  const [notes, setNotes] = useState<any[]>([]);
+  
+  // AI 伴读状态
+  const [companionAction, setCompanionAction] = useState('explain');
+  const [companionResult, setCompanionResult] = useState<string | null>(null);
+  const [isCompanionLoading, setIsCompanionLoading] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  
+  // 划词菜单状态
+  const [selectionMenu, setSelectionMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    text: string;
+    paragraphIndex: number;
+  }>({ visible: false, x: 0, y: 0, text: '', paragraphIndex: -1 });
+  const [isMarking, setIsMarking] = useState(false);
+  
+  // 记笔记模态框状态
+  const [noteModal, setNoteModal] = useState<{
+    visible: boolean;
+    text: string;
+    paragraphIndex: number;
+  }>({ visible: false, text: '', paragraphIndex: -1 });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 获取书架列表
+  // ================= 数据获取逻辑 =================
+
   const fetchBooks = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/books`);
       const data = await res.json();
       setBooks(data);
       if (data.length > 0 && !currentBook) {
-        handleSelectBook(data[0]);
+        // 默认选中第一本书，并跳转到上次阅读的章节
+        handleSelectBook(data[0], data[0].current_chapter_index || 0);
       }
     } catch (error) {
       console.error("获取书籍失败:", error);
     }
   };
 
-  // 选择书籍并获取目录
-  const handleSelectBook = async (book: any) => {
+  const handleSelectBook = async (book: any, targetChapterIndex?: number) => {
+    if (!book || !book.id) return;
     setCurrentBook(book);
+    
+    // 如果没有指定目标章节，则使用书籍记录的当前章节
+    const chapterToLoad = targetChapterIndex !== undefined ? targetChapterIndex : (book.current_chapter_index || 0);
+    
     try {
       const res = await fetch(`${API_BASE_URL}/book/${book.id}/chapters`);
+      if (!res.ok) throw new Error('获取目录失败');
       const data = await res.json();
-      setChapters(data);
-      if (data.length > 0) {
-        handleSelectChapter(book.id, data[0].index);
+      if (Array.isArray(data)) {
+        setChapters(data);
+        
+        // 更新 books 数组中的 total_chapters (特别是对于 PDF)
+        setBooks(prevBooks => prevBooks.map(b => 
+          b.id === book.id ? { ...b, total_chapters: data.length } : b
+        ));
+
+        if (data.length > 0) {
+          // 确保目标章节索引在有效范围内
+          const validChapterIndex = Math.min(Math.max(0, chapterToLoad), data.length - 1);
+          handleSelectChapter(book.id, validChapterIndex);
+        }
+      } else {
+        setChapters([]);
       }
     } catch (error) {
       console.error("获取目录失败:", error);
+      setChapters([]);
     }
   };
 
-  // 选择章节并获取内容
   const handleSelectChapter = async (bookId: number, chapterIndex: number) => {
     setCurrentChapterIndex(chapterIndex);
+    
+    // 更新前端 books 数组中的进度，以便侧边栏实时显示
+    setBooks(prevBooks => prevBooks.map(b => 
+      b.id === bookId ? { ...b, current_chapter_index: chapterIndex } : b
+    ));
+
     try {
       const res = await fetch(`${API_BASE_URL}/book/${bookId}/read?chapter_index=${chapterIndex}`);
+      if (!res.ok) throw new Error('获取章节内容失败');
       const data = await res.json();
       setChapterContent(data);
+      
+      // 并行获取 AI 分析、历史记录和笔记
+      fetchAiAnalysis(bookId, chapterIndex);
+      fetchAiHistory(bookId, chapterIndex);
+      fetchNotes(bookId, chapterIndex);
     } catch (error) {
       console.error("获取章节内容失败:", error);
+      setChapterContent(null);
     }
   };
 
-  // 上传书籍
+  const fetchAiAnalysis = async (bookId: number, chapterIndex: number, forceAnalyze: boolean = false) => {
+    setIsAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${bookId}/analyze?chapter_index=${chapterIndex}&force_analyze=${forceAnalyze}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || '获取 AI 分析失败');
+      }
+      const data = await res.json();
+      setAiAnalysis(data);
+    } catch (error: any) {
+      console.error("获取 AI 分析失败:", error);
+      if (forceAnalyze) {
+        alert(`AI 分析失败: ${error.message}\n请检查后端日志或大模型配置。`);
+      }
+      setAiAnalysis(null);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const fetchAiHistory = async (bookId: number, chapterIndex: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${bookId}/ai_history?chapter_index=${chapterIndex}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAiHistory(data);
+      }
+    } catch (error) {
+      console.error("获取 AI 历史失败:", error);
+    }
+  };
+
+  const fetchNotes = async (bookId: number, chapterIndex: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${bookId}/notes?chapter_index=${chapterIndex}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNotes(data);
+      }
+    } catch (error) {
+      console.error("获取笔记失败:", error);
+    }
+  };
+
+  // ================= 交互逻辑 =================
+
+  const handleSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      setSelectionMenu(prev => ({ ...prev, visible: false }));
+      return;
+    }
+
+    const text = selection.toString().trim();
+    if (!text) {
+      setSelectionMenu(prev => ({ ...prev, visible: false }));
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    // 尝试找到选中文本所在的段落索引
+    let paragraphIndex = -1;
+    let node: Node | null = selection.anchorNode;
+    while (node && node.nodeName !== 'MAIN') {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        const idxStr = el.getAttribute('data-paragraph-index');
+        if (idxStr) {
+          paragraphIndex = parseInt(idxStr, 10);
+          break;
+        }
+      }
+      node = node.parentNode;
+    }
+
+    setSelectionMenu({
+      visible: true,
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10, // 显示在选中文本上方
+      text,
+      paragraphIndex
+    });
+  };
+
+  const handleSemanticMark = async () => {
+    if (!currentBook || selectionMenu.paragraphIndex === -1) return;
+    
+    setSelectionMenu(prev => ({ ...prev, visible: false }));
+    setIsMarking(true);
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/ai/semantic_mark`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book_id: currentBook.id,
+          chapter_index: currentChapterIndex,
+          paragraph_index: selectionMenu.paragraphIndex,
+          selected_text: selectionMenu.text,
+          context: chapterContent?.title || ""
+        }),
+      });
+      
+      if (!res.ok) throw new Error('AI 标记失败');
+      const newMarker = await res.json();
+      
+      // 更新前端状态
+      setAiAnalysis((prev: any) => {
+        if (!prev) return { semanticMarkers: [newMarker] };
+        const newMarkers = [...(prev.semanticMarkers || [])];
+        const existingIdx = newMarkers.findIndex((m: any) => m.paragraphIndex === newMarker.paragraphIndex);
+        if (existingIdx >= 0) {
+          newMarkers[existingIdx] = newMarker;
+        } else {
+          newMarkers.push(newMarker);
+        }
+        return { ...prev, semanticMarkers: newMarkers };
+      });
+      
+      // 清除选中状态
+      window.getSelection()?.removeAllRanges();
+      
+    } catch (error) {
+      console.error("AI 标记失败:", error);
+      alert("AI 标记失败，请重试");
+    } finally {
+      setIsMarking(false);
+    }
+  };
+
+  const handleCreateNote = async (content: string) => {
+    if (!currentBook || !content.trim()) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${currentBook.id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book_id: currentBook.id,
+          chapter_index: currentChapterIndex,
+          original_text: noteModal.text,
+          content: content
+        }),
+      });
+      
+      if (!res.ok) throw new Error('保存笔记失败');
+      
+      // 刷新笔记列表
+      fetchNotes(currentBook.id, currentChapterIndex);
+      setNoteModal({ visible: false, text: '', paragraphIndex: -1 });
+      
+    } catch (error) {
+      console.error("保存笔记失败:", error);
+      alert("保存笔记失败，请重试");
+    }
+  };
+
+  // 仅切换模式，不发送请求
+  const handleModeSwitch = (action: string) => {
+    setCompanionAction(action);
+  };
+
+  // 实际发送请求
+  const submitCompanionRequest = async () => {
+    if (!currentBook) return;
+    
+    setIsCompanionLoading(true);
+    
+    let selectedText = "";
+    if (chapterContent && chapterContent.elements && chapterContent.elements.length > 0) {
+      const textElements = chapterContent.elements.filter((el: any) => el.type === 'text' || !el.type);
+      selectedText = textElements.slice(0, 3).map((el: any) => el.content).join('\n');
+    }
+    
+    const context = chapterContent?.title || "";
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/ai/companion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: companionAction,
+          selected_text: selectedText,
+          context: context,
+          user_message: chatInput,
+          book_id: currentBook.id,
+          chapter_index: currentChapterIndex
+        }),
+      });
+      
+      if (!res.ok) throw new Error('AI 请求失败');
+      const data = await res.json();
+      setCompanionResult(data.result);
+      setChatInput(''); // 发送成功后清空输入框
+      
+      // 刷新历史记录
+      fetchAiHistory(currentBook.id, currentChapterIndex);
+    } catch (error) {
+      console.error("AI 伴读失败:", error);
+      setCompanionResult("请求失败，请检查网络或大模型配置。");
+    } finally {
+      setIsCompanionLoading(false);
+    }
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -93,11 +357,16 @@ const App = () => {
         body: formData,
       });
       const data = await res.json();
-      await fetchBooks(); // 刷新书架
-      handleSelectBook(data); // 自动选中新上传的书
-    } catch (error) {
+      
+      if (!res.ok) throw new Error(data.detail || "上传失败");
+      
+      await fetchBooks();
+      if (data && data.id) {
+        handleSelectBook(data);
+      }
+    } catch (error: any) {
       console.error("上传失败:", error);
-      alert("上传失败，请检查后端服务是否启动");
+      alert(`上传失败: ${error.message}`);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -108,20 +377,22 @@ const App = () => {
     fetchBooks();
   }, []);
 
-  // 将当前阅读的书籍排在最前面
+  // ================= 辅助计算 =================
+
   const sortedBooks = [...books].sort((a, b) => {
     if (currentBook && a.id === currentBook.id) return -1;
     if (currentBook && b.id === currentBook.id) return 1;
     return 0;
   });
 
-  // 构建目录树
   const buildTocTree = (flatToc: any[]) => {
+    if (!Array.isArray(flatToc)) return [];
     const root: any[] = [];
     const stack: any[] = [];
 
     flatToc.forEach((item, i) => {
-      const node = { id: i, ...item, children: [] };
+      const level = item.level || 1;
+      const node = { id: i, ...item, level, children: [] };
       
       while (stack.length > 0 && stack[stack.length - 1].level >= node.level) {
         stack.pop();
@@ -134,478 +405,402 @@ const App = () => {
       }
       stack.push(node);
     });
-
     return root;
   };
 
   const tocTree = buildTocTree(chapters);
+  const progressPercent = chapters.length > 1 ? (currentChapterIndex / (chapters.length - 1)) * 100 : 0;
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!currentBook || chapters.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percent = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetIndex = Math.round(percent * (chapters.length - 1));
+    handleSelectChapter(currentBook.id, targetIndex);
+  };
+
+  // ================= 渲染 =================
 
   return (
     <div className={`flex h-screen w-full overflow-hidden font-sans ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#F8F9FA] text-gray-800'}`}>
       
-      {/* ================= 左侧边栏 (Sidebar) ================= */}
-      <aside className={`w-[260px] flex flex-col border-r ${isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-white/60'} backdrop-blur-xl transition-colors duration-300`}>
-        
-        {/* Logo 区域 */}
-        <div className="flex items-center gap-3 px-6 py-5">
-          <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-500/30">
-            <BookOpen size={18} />
-          </div>
-          <span className="font-bold text-lg tracking-wide">智阅 SmartRead</span>
-          <button className="ml-auto text-gray-400 hover:text-gray-600">
-            <LayoutTemplate size={18} />
-          </button>
-        </div>
+      <PrimaryNav isDarkMode={isDarkMode} activeTab={activeTab} setActiveTab={setActiveTab} />
 
-        {/* 导入按钮 */}
-        <div className="px-6 mb-6">
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            accept=".txt,.pdf" 
-            className="hidden" 
+      {activeTab === '阅读' && (
+        <>
+          <SecondarySidebar 
+            isDarkMode={isDarkMode}
+            isSidebarOpen={isSidebarOpen}
+            setIsSidebarOpen={setIsSidebarOpen}
+            isUploading={isUploading}
+            handleFileUpload={handleFileUpload}
+            fileInputRef={fileInputRef}
+            sortedBooks={sortedBooks}
+            currentBook={currentBook}
+            handleSelectBook={handleSelectBook}
+            books={books}
+            chapters={chapters}
+            isTocExpanded={isTocExpanded}
+            setIsTocExpanded={setIsTocExpanded}
+            tocTree={tocTree}
+            currentChapterIndex={currentChapterIndex}
+            handleSelectChapter={handleSelectChapter}
           />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="w-full py-2.5 rounded-full border border-indigo-200 text-indigo-600 font-medium flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-          >
-            <Plus size={18} />
-            {isUploading ? '正在解析...' : '导入书籍'}
-          </button>
-        </div>
 
-        {/* 导航菜单 */}
-        <div className="flex flex-col gap-1 px-3 mb-8">
-          <NavItem icon={<BookOpen size={18} />} label="阅读" active />
-          <NavItem icon={<Edit3 size={18} />} label="笔记" />
-          <NavItem icon={<Network size={18} />} label="思维导图" />
-          <NavItem icon={<MessageSquare size={18} />} label="AI问答" />
-          <NavItem icon={<Library size={18} />} label="书库" />
-          <NavItem icon={<Settings size={18} />} label="设置" />
-        </div>
-
-        {/* 我的书库 */}
-        <div className="px-6 mb-2 flex items-center justify-between text-sm font-medium text-gray-500 shrink-0">
-          <span>我的书库</span>
-          <Search size={14} className="cursor-pointer hover:text-gray-800" />
-        </div>
-        
-        <div className="max-h-[180px] overflow-y-auto px-3 custom-scrollbar shrink-0">
-          {sortedBooks.map(book => (
-            <div key={book.id} onClick={() => handleSelectBook(book)}>
-              <BookItem 
-                title={book.title} 
-                author={book.author || "未知作者"} 
-                progress={0} 
-                coverColor={book.coverColor || "bg-indigo-100"} 
-                coverImage={book.coverImage}
-                active={currentBook?.id === book.id} 
-              />
-            </div>
-          ))}
-          
-          {books.length === 0 && (
-            <div className="text-center text-xs text-gray-400 py-4">暂无书籍，请先导入</div>
-          )}
-        </div>
-
-        {/* 目录 */}
-        {currentBook && chapters.length > 0 && (
-          <div className={`flex flex-col mt-4 border-t border-gray-100 pt-4 ${isTocExpanded ? 'flex-1 min-h-0' : 'shrink-0'}`}>
-            <div 
-              className="mb-3 flex items-center justify-between text-sm font-medium text-gray-800 px-6 shrink-0 cursor-pointer hover:text-indigo-600 transition-colors"
-              onClick={() => setIsTocExpanded(!isTocExpanded)}
-            >
-              <span>目录</span>
-              <ChevronDown size={16} className={`transition-transform duration-200 ${!isTocExpanded ? '-rotate-90' : ''}`} />
-            </div>
-            {isTocExpanded && (
-              <div className="flex-1 overflow-y-auto px-3 custom-scrollbar">
-                <div className="flex flex-col text-sm text-gray-600 pb-4">
-                  {tocTree.map((node) => (
-                    <TocNodeComponent 
-                      key={node.id} 
-                      node={node} 
-                      currentChapterIndex={currentChapterIndex} 
-                      onSelect={(index: number) => handleSelectChapter(currentBook.id, index)} 
-                    />
-                  ))}
+          <div className="flex-1 flex flex-col min-w-0 bg-[#F8F9FA]">
+            {/* 顶部工具栏 */}
+            <header className="h-14 border-b border-gray-200/60 flex items-center justify-between px-6 text-sm text-gray-600 shrink-0 bg-white z-20">
+              <div className="flex items-center gap-1 font-medium">
+                <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-100/50 hover:bg-gray-100 rounded-full cursor-pointer transition-colors">
+                  <span className="text-gray-800 font-bold">{currentBook?.title || "未选择书籍"}</span>
+                  <ChevronDown size={14} className="text-gray-400" />
+                </div>
+                <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500 cursor-pointer hover:text-gray-800 transition-colors">
+                  <div className="w-1.5 h-1.5 bg-gray-300 rotate-45 rounded-[1px]"></div>
+                  <span>{chapterContent?.title || "未选择章节"}</span>
+                  <ChevronRight size={14} className="text-gray-400" />
                 </div>
               </div>
-            )}
-          </div>
-        )}
+              
+              <div className="flex items-center gap-5">
+                {!isSidebarOpen && (
+                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors text-indigo-500" onClick={() => setIsSidebarOpen(true)}>
+                    <LayoutTemplate size={16} /> 展开侧边栏
+                  </button>
+                )}
+                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><LayoutTemplate size={16} /> 版式</button>
+                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors" onClick={() => setIsDarkMode(!isDarkMode)}>
+                  {isDarkMode ? <Sun size={16} /> : <Moon size={16} />} 主题
+                </button>
+                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><span className="font-serif font-bold text-[15px]">Aa</span> 字体</button>
+                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><List size={16} /> <ChevronDown size={12} className="text-gray-400 -ml-0.5" /></button>
+                <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                <button className="hover:text-gray-900"><Minus size={16} /></button>
+                <button className="hover:text-gray-900"><Maximize size={14} /></button>
+                <button className="hover:text-gray-900">✕</button>
+              </div>
+            </header>
 
-        {/* 底部用户信息 */}
-        <div className="p-4 border-t border-gray-200/50 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-400 flex items-center justify-center text-white shadow-sm">
-            <User size={16} />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium">读书人</span>
-            <span className="text-[10px] text-amber-600 bg-amber-100 px-1.5 rounded-sm w-max">VIP</span>
-          </div>
-          <button className="ml-auto text-gray-400 hover:text-gray-600 flex items-center gap-1 text-xs">
-            <BookmarkPlus size={14} />
-            添加书签
-          </button>
-        </div>
-      </aside>
+            <div className="flex-1 flex overflow-hidden">
+              {/* 划词悬浮菜单 */}
+              {selectionMenu.visible && (
+                <div 
+                  className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 px-2 flex items-center gap-1 transform -translate-x-1/2 -translate-y-full"
+                  style={{ left: selectionMenu.x, top: selectionMenu.y }}
+                >
+                  <button 
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
+                    onClick={() => {
+                      setChatInput(selectionMenu.text);
+                      setCompanionAction('explain');
+                      setIsAiChatExpanded(true);
+                      setSelectionMenu(prev => ({ ...prev, visible: false }));
+                    }}
+                  >
+                    <Bot size={14} /> AI 解读
+                  </button>
+                  <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                  <button 
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
+                    onClick={handleSemanticMark}
+                    disabled={isMarking}
+                  >
+                    {isMarking ? (
+                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-indigo-600"></div>
+                    ) : (
+                      <Lightbulb size={14} />
+                    )}
+                    {isMarking ? '标记中...' : 'AI 标记'}
+                  </button>
+                  <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                  <button 
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
+                    onClick={() => {
+                      setNoteModal({
+                        visible: true,
+                        text: selectionMenu.text,
+                        paragraphIndex: selectionMenu.paragraphIndex
+                      });
+                      setSelectionMenu(prev => ({ ...prev, visible: false }));
+                    }}
+                  >
+                    <Edit3 size={14} /> 记笔记
+                  </button>
+                </div>
+              )}
 
-      {/* ================= 中央阅读区 (Center) ================= */}
-      <main className="flex-1 flex flex-col relative bg-white shadow-[0_0_40px_rgba(0,0,0,0.03)] z-10">
-        
-        {/* 顶部工具栏 */}
-        <header className="h-14 border-b border-gray-100 flex items-center justify-between px-6 text-sm text-gray-600">
-          <div className="flex items-center gap-2 font-medium">
-            <span className="text-gray-800">{currentBook?.title || "未选择书籍"}</span>
-            <ChevronDown size={14} className="text-gray-400" />
-            <span className="text-gray-300 mx-2">|</span>
-            <span className="text-gray-500">{chapterContent?.title || "未选择章节"}</span>
-            <ChevronRight size={14} className="text-gray-400" />
-          </div>
-          
-          <div className="flex items-center gap-5">
-            <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><LayoutTemplate size={16} /> 版式</button>
-            <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors" onClick={() => setIsDarkMode(!isDarkMode)}>
-              {isDarkMode ? <Sun size={16} /> : <Moon size={16} />} 主题
-            </button>
-            <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><Type size={16} /> 字体</button>
-            <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><MoreHorizontal size={16} /></button>
-            <div className="w-px h-4 bg-gray-200 mx-1"></div>
-            <button className="hover:text-gray-900"><Minus size={16} /></button>
-            <button className="hover:text-gray-900"><Maximize size={14} /></button>
-            <button className="hover:text-gray-900">✕</button>
-          </div>
-        </header>
+              {/* 中央阅读区 */}
+              <main className="flex-1 flex flex-col relative z-10" onMouseUp={handleSelection}>
+                <div className="flex-1 overflow-y-auto custom-scrollbar flex justify-center py-8">
+                  <div className="w-full max-w-[800px] px-14 py-12 text-[20px] leading-[2.0] text-gray-900 tracking-[0.05em] font-['SimSun','宋体','serif'] bg-white rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.04)] border border-gray-100/80 my-auto">
+                    {chapterContent ? (
+                      chapterContent.elements.map((el: any, idx: number) => {
+                        if (el.type === 'image') {
+                          return (
+                            <div key={idx} className="my-8 flex justify-center">
+                              <img src={`data:image/${el.ext || 'jpeg'};base64,${el.content}`} alt={`Page image ${idx}`} className="max-w-full h-auto rounded-lg shadow-sm border border-gray-100" />
+                            </div>
+                          );
+                        }
 
-        {/* 阅读正文区域 */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar relative flex justify-center pb-40">
-          <div className="w-full max-w-[720px] px-12 py-16 text-[17px] leading-[2.2] text-gray-800 tracking-[0.02em] font-serif">
-            
-            {chapterContent ? (
-              chapterContent.elements.map((el: any, idx: number) => {
-                if (el.type === 'image') {
-                  return (
-                    <div key={idx} className="my-8 flex justify-center">
-                      <img 
-                        src={`data:image/${el.ext || 'jpeg'};base64,${el.content}`} 
-                        alt={`Page image ${idx}`} 
-                        className="max-w-full h-auto rounded-lg shadow-sm border border-gray-100"
-                      />
+                        const marker = aiAnalysis?.semanticMarkers?.find((m: any) => m.paragraphIndex === idx);
+                        if (marker) {
+                          const colorMap: Record<string, { border: string, bg: string, text: string, line: string }> = {
+                            'criticism': { border: 'border-red-400', bg: 'bg-red-50', text: 'text-red-600', line: 'decoration-red-300' },
+                            'quote': { border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-600', line: 'decoration-purple-300' },
+                            'core': { border: 'border-amber-400', bg: 'bg-amber-50', text: 'text-amber-600', line: 'decoration-amber-300' },
+                            'background': { border: 'border-blue-400', bg: 'bg-blue-50', text: 'text-blue-600', line: 'decoration-blue-300' },
+                            'definition': { border: 'border-emerald-400', bg: 'bg-emerald-50', text: 'text-emerald-600', line: 'decoration-emerald-300' }
+                          };
+                          const colors = colorMap[marker.type] || colorMap['core'];
+
+                          return (
+                            <div key={idx} data-paragraph-index={idx} className="mb-6 relative group">
+                              <div className={`absolute -left-6 top-1 bottom-1 w-1 rounded-full ${colors.bg} ${colors.border} border-l-2 opacity-0 group-hover:opacity-100 transition-opacity`}></div>
+                              <p className="relative inline">
+                                <span className={`underline decoration-2 underline-offset-4 ${colors.line}`}>{el.content}</span>
+                                <span 
+                                  className={`ml-3 inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${colors.bg} ${colors.text} border ${colors.border} border-opacity-30 align-middle cursor-pointer hover:shadow-sm transition-shadow`}
+                                  title={marker.explanation}
+                                >
+                                  <Lightbulb size={10} className="mr-1" />{marker.tag}
+                                </span>
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        return <p key={idx} data-paragraph-index={idx} className="mb-6">{el.content}</p>;
+                      })
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400 mt-20">
+                        <BookOpen size={48} className="mb-4 opacity-20" />
+                        <p>请在左侧选择书籍和章节开始阅读</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 底部控制与 AI 区域 */}
+                <div className="w-full flex justify-center shrink-0 bg-[#F8F9FA]/80 backdrop-blur-md pt-4 pb-6 z-20">
+                  <div className="w-full max-w-[720px] px-12 flex flex-col gap-4">
+                    {/* 进度条 */}
+                    <div className="w-full bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-3 flex items-center justify-between">
+                      <button 
+                        className="text-gray-400 hover:text-gray-800 disabled:opacity-30 transition-colors p-1"
+                        onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.max(0, currentChapterIndex - 1))}
+                        disabled={currentChapterIndex === 0}
+                      ><ChevronLeft size={18} /></button>
+                      <div className="flex items-center gap-4 flex-1 px-6">
+                        <span className="text-xs text-gray-500 w-16 text-right">{currentChapterIndex + 1} / {chapters.length || 1}页</span>
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full relative cursor-pointer group" onClick={handleProgressClick}>
+                          <div className="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full transition-all duration-300 ease-out" style={{ width: `${progressPercent}%` }}></div>
+                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-indigo-500 rounded-full shadow-sm transition-all duration-300 ease-out group-hover:scale-110" style={{ left: `calc(${progressPercent}% - 7px)` }}></div>
+                        </div>
+                        <span className="text-xs text-gray-500 w-12">{Math.round(progressPercent)}%</span>
+                      </div>
+                      <button 
+                        className="text-gray-400 hover:text-gray-800 disabled:opacity-30 transition-colors p-1"
+                        onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.min(chapters.length - 1, currentChapterIndex + 1))}
+                        disabled={currentChapterIndex >= chapters.length - 1}
+                      ><ChevronRight size={18} /></button>
                     </div>
-                  );
+
+                    {/* AI 对话区 */}
+                    <div className="flex justify-center">
+                      <div 
+                        className={`bg-white border border-gray-100 shadow-sm overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col relative ${isAiChatExpanded ? 'w-full h-[320px] rounded-3xl' : 'w-[180px] h-[52px] rounded-full cursor-pointer hover:bg-gray-50 hover:shadow-md'}`}
+                        onClick={() => !isAiChatExpanded && setIsAiChatExpanded(true)}
+                      >
+                        <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 ${isAiChatExpanded ? 'opacity-100 pointer-events-auto delay-100' : 'opacity-0 pointer-events-none'}`}>
+                          <button className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10" onClick={(e) => { e.stopPropagation(); setIsAiChatExpanded(false); }} title="收起 AI 伴读">
+                            <ChevronDown size={18} />
+                          </button>
+
+                          <div className="p-6 pb-2 flex-1 overflow-y-auto custom-scrollbar">
+                            <div className="flex gap-4">
+                              <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-200/50">
+                                <Bot size={22} />
+                              </div>
+                              <div className="flex-1 pr-6">
+                                <div className="flex items-center gap-3 mb-3">
+                                  <span className="font-semibold text-[15px] text-gray-800">AI 伴读</span>
+                                  <div className="flex gap-2">
+                                    {['chat', 'explain', 'translate', 'background', 'extend'].map(action => (
+                                      <span 
+                                        key={action}
+                                        onClick={() => handleModeSwitch(action)}
+                                        className={`text-[11px] px-2.5 py-1 rounded-full cursor-pointer font-medium transition-colors ${companionAction === action ? 'bg-indigo-50 text-indigo-600' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                                      >
+                                        {action === 'chat' ? '对话' : action === 'explain' ? '解释' : action === 'translate' ? '翻译' : action === 'background' ? '背景' : '延伸思考'}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="text-[14px] text-gray-700 leading-[1.8] whitespace-pre-wrap">
+                                  {isCompanionLoading ? (
+                                    <div className="flex items-center gap-2 text-gray-400">
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                                      AI 正在思考...
+                                    </div>
+                                  ) : (
+                                    companionResult || "请选择上方功能或在下方输入问题与 AI 交流。"
+                                  )}
+                                </div>
+                                
+                                {/* 延伸思考推荐 */}
+                                {!isCompanionLoading && !companionResult && aiAnalysis?.extendedThoughts && aiAnalysis.extendedThoughts.length > 0 && (
+                                  <div className="mt-4 space-y-2">
+                                    <div className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                                      <Lightbulb size={12} className="text-amber-500" /> 延伸思考建议：
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                      {aiAnalysis.extendedThoughts.map((thought: string, idx: number) => (
+                                        <button 
+                                          key={idx}
+                                          onClick={() => {
+                                            setChatInput(thought);
+                                            setCompanionAction('chat');
+                                            // 可选：点击建议后直接发送，或者只填入输入框让用户自己点发送
+                                            // 这里选择填入输入框并切换到对话模式，让用户自己决定是否发送
+                                          }}
+                                          className="text-left text-[13px] text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 px-3 py-2 rounded-lg transition-colors border border-indigo-100/50"
+                                        >
+                                          {thought}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 pt-2 shrink-0">
+                            <div className="relative flex items-center">
+                              <input 
+                                type="text" 
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && submitCompanionRequest()}
+                                placeholder={companionAction === 'chat' ? "输入您的问题..." : `输入附加要求，或直接点击发送进行${companionAction === 'explain' ? '解释' : companionAction === 'translate' ? '翻译' : companionAction === 'background' ? '背景分析' : '延伸思考'}...`}
+                                className="w-full bg-gray-50 border border-transparent rounded-2xl pl-4 pr-14 py-3.5 text-[14px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white focus:border-indigo-100 transition-all placeholder:text-gray-400"
+                              />
+                              <button 
+                                onClick={submitCompanionRequest}
+                                disabled={isCompanionLoading || (companionAction === 'chat' && !chatInput.trim())}
+                                className="absolute right-2 w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
+                              >
+                                <Send size={18} className="ml-0.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${!isAiChatExpanded ? 'opacity-100 pointer-events-auto delay-100' : 'opacity-0 pointer-events-none'}`}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200/50"><Bot size={18} /></div>
+                            <span className="text-[14px] font-medium text-gray-700">唤起 AI 伴读</span>
+                            <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                            <ChevronDown size={16} className="text-gray-400 rotate-180" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </main>
+
+              {/* 右侧 AI 分析面板 */}
+              <RightPanel 
+                isDarkMode={isDarkMode} 
+                aiAnalysis={aiAnalysis} 
+                isLoading={isAiLoading} 
+                aiHistory={aiHistory}
+                notes={notes}
+                onTriggerAnalysis={() => {
+                  if (!currentBook) {
+                    alert("未选择书籍，无法分析");
+                    return;
+                  }
+                  fetchAiAnalysis(currentBook.id, currentChapterIndex, true);
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === '书库' && (
+        <Library 
+          books={books} 
+          onSelectBook={(book) => { handleSelectBook(book); setActiveTab('阅读'); }} 
+          onRefreshBooks={fetchBooks}
+          isUploading={isUploading}
+          onUpload={handleFileUpload}
+        />
+      )}
+
+      {activeTab === '设置' && <SettingsComponent />}
+
+      {activeTab === '笔记' && (
+        <GlobalNotes 
+          books={books} 
+          onSelectBook={(book) => { handleSelectBook(book); setActiveTab('阅读'); }} 
+        />
+      )}
+
+      {activeTab === 'AI问答' && (
+        <GlobalAIHistory 
+          books={books} 
+          onSelectBook={(book) => { handleSelectBook(book); setActiveTab('阅读'); }} 
+        />
+      )}
+
+      {activeTab === '思维导图' && (
+        <GlobalMindMap 
+          books={books} 
+          onSelectBook={(book) => { handleSelectBook(book); setActiveTab('阅读'); }} 
+        />
+      )}
+
+      {/* 记笔记模态框 */}
+      {noteModal.visible && (
+        <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl w-[400px] p-5">
+            <h3 className="text-lg font-medium text-gray-800 mb-3">添加笔记</h3>
+            <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg mb-4 border-l-2 border-indigo-300 line-clamp-3">
+              {noteModal.text}
+            </div>
+            <textarea 
+              autoFocus
+              className="w-full h-32 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-none"
+              placeholder="写下你的想法..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  handleCreateNote(e.currentTarget.value);
                 }
-                return (
-                  <p key={idx} className="mb-6">
-                    {el.content}
-                  </p>
-                );
-              })
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 mt-20">
-                <BookOpen size={48} className="mb-4 opacity-20" />
-                <p>请在左侧选择书籍和章节开始阅读</p>
-              </div>
-            )}
-
-          </div>
-        </div>
-
-        {/* 底部阅读控制栏 */}
-        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 w-[600px] bg-white/80 backdrop-blur-md border border-gray-200/60 rounded-full px-6 py-3 flex items-center justify-between shadow-lg shadow-gray-200/20 z-20">
-          <button 
-            className="text-gray-400 hover:text-gray-800 disabled:opacity-30"
-            onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.max(0, currentChapterIndex - 1))}
-            disabled={currentChapterIndex === 0}
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <div className="flex items-center gap-4 flex-1 px-8">
-            <span className="text-xs text-gray-500 w-16 text-right">{currentChapterIndex + 1} / {chapters.length || 1}页</span>
-            <div className="flex-1 h-1 bg-gray-200 rounded-full relative cursor-pointer">
-              <div className="absolute left-0 top-0 bottom-0 w-[20%] bg-indigo-500 rounded-full"></div>
-              <div className="absolute left-[20%] top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-2 border-indigo-500 rounded-full shadow-sm"></div>
-            </div>
-            <span className="text-xs text-gray-500 w-12">100%</span>
-          </div>
-          <button 
-            className="text-gray-400 hover:text-gray-800 disabled:opacity-30"
-            onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.min(chapters.length - 1, currentChapterIndex + 1))}
-            disabled={currentChapterIndex >= chapters.length - 1}
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
-
-        {/* 底部 AI 对话区 */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-10 pb-6 px-12 z-30">
-          <div className="max-w-[720px] mx-auto bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-indigo-50 overflow-hidden">
-            
-            {/* AI 回答区域 */}
-            <div className="p-5 bg-indigo-50/30">
-              <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-200">
-                  <Bot size={18} />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-medium text-sm text-indigo-900">AI 伴读</span>
-                    <div className="flex gap-2">
-                      <span className="text-[11px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full cursor-pointer hover:bg-indigo-200 transition-colors">解释</span>
-                      <span className="text-[11px] px-2 py-0.5 bg-white border border-gray-200 text-gray-600 rounded-full cursor-pointer hover:bg-gray-50 transition-colors">翻译</span>
-                      <span className="text-[11px] px-2 py-0.5 bg-white border border-gray-200 text-gray-600 rounded-full cursor-pointer hover:bg-gray-50 transition-colors">背景</span>
-                      <span className="text-[11px] px-2 py-0.5 bg-white border border-gray-200 text-gray-600 rounded-full cursor-pointer hover:bg-gray-50 transition-colors">延伸思考</span>
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-700 leading-relaxed">
-                    <p className="mb-2">这段话是列宁在批判无产阶级在资产阶级政治体系中寻求平等的幻想。</p>
-                    <ul className="list-disc pl-4 space-y-1.5 text-gray-600">
-                      <li><strong className="text-gray-800 font-medium">核心观点：</strong>无产阶级若想真正表达自己的利益，必须打破资产阶级的政治机器，而不是在其中寻求平等。</li>
-                      <li><strong className="text-gray-800 font-medium">背景：</strong>这里的“机器”指的是资产阶级控制的议会、报刊等制度工具。</li>
-                      <li><strong className="text-gray-800 font-medium">延伸思考：</strong>这体现了列宁对改良主义的批判，强调革命的必要性。</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 输入框 */}
-            <div className="p-3 bg-white border-t border-gray-100 flex items-center gap-3">
-              <input 
-                type="text" 
-                placeholder="问问这段内容..." 
-                className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow"
-              />
-              <button className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200">
-                <Send size={16} className="ml-1" />
+              }}
+            ></textarea>
+            <div className="flex justify-end gap-3 mt-4">
+              <button 
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                onClick={() => setNoteModal({ visible: false, text: '', paragraphIndex: -1 })}
+              >
+                取消
+              </button>
+              <button 
+                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                onClick={(e) => {
+                  const textarea = e.currentTarget.parentElement?.previousElementSibling as HTMLTextAreaElement;
+                  handleCreateNote(textarea.value);
+                }}
+              >
+                保存 (Ctrl+Enter)
               </button>
             </div>
           </div>
-        </div>
-
-      </main>
-
-      {/* ================= 右侧 AI 分析面板 (Right Panel) ================= */}
-      <aside className={`w-[380px] flex flex-col border-l ${isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-[#FAFAFC]'} overflow-y-auto custom-scrollbar p-5 gap-5`}>
-        
-        {/* 顶部 Tabs */}
-        <div className="flex items-center gap-6 border-b border-gray-200 pb-3 px-2">
-          <button className="text-indigo-600 font-medium text-sm relative">
-            AI解读
-            <div className="absolute -bottom-[13px] left-1/2 -translate-x-1/2 w-6 h-0.5 bg-indigo-600 rounded-t-full"></div>
-          </button>
-          <button className="text-gray-500 hover:text-gray-800 font-medium text-sm">笔记 (3)</button>
-          <button className="text-gray-500 hover:text-gray-800 font-medium text-sm">思维导图</button>
-        </div>
-
-        {/* AI 解读卡片 */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-indigo-50/50 relative overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-          <div className="flex items-center gap-2 mb-3 text-indigo-700 font-medium text-sm">
-            <Bot size={16} />
-            本段核心观点
-          </div>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            列宁批判无产阶级在资产阶级制度内寻求平等的策略，认为只有通过革命手段打破现有机器，才能真正实现无产阶级的解放。
-          </p>
-        </div>
-
-        {/* 关键概念标签 */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-4 text-gray-800 font-medium text-sm">
-            <BookOpen size={16} className="text-blue-500" />
-            关键概念
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium border border-emerald-100/50">无产阶级</span>
-            <span className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-100/50">资产阶级</span>
-            <span className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium border border-purple-100/50">革命手段</span>
-            <span className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-medium border border-amber-100/50">政治机器</span>
-            <span className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium border border-red-100/50">阶级斗争</span>
-          </div>
-        </div>
-
-        {/* 人物关系图 */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-6 text-gray-800 font-medium text-sm">
-            <Network size={16} className="text-cyan-500" />
-            人物关系
-          </div>
-          <div className="flex items-center justify-center gap-4 py-2">
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm">
-                <User size={20} />
-              </div>
-              <span className="text-xs font-medium text-gray-700">无产阶级</span>
-            </div>
-            
-            <div className="flex-1 flex flex-col items-center relative">
-              <div className="w-full h-px bg-gray-300 border-t border-dashed border-gray-400 absolute top-1/2 -translate-y-1/2"></div>
-              <div className="absolute top-1/2 right-0 -translate-y-1/2 w-2 h-2 border-t-2 border-r-2 border-gray-400 rotate-45"></div>
-              <span className="bg-white px-2 text-[10px] text-gray-500 relative z-10 -mt-4">对抗</span>
-            </div>
-
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 shadow-sm">
-                <User size={20} />
-              </div>
-              <span className="text-xs font-medium text-gray-700">资产阶级</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 相关笔记 */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-gray-800 font-medium text-sm">
-              <Edit3 size={16} className="text-amber-500" />
-              相关笔记
-            </div>
-            <button className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center">查看全部 <ChevronRight size={12} /></button>
-          </div>
-          <div className="space-y-3">
-            <div className="flex gap-3 group cursor-pointer">
-              <span className="text-xs text-gray-400 shrink-0 pt-0.5">2024-05-20</span>
-              <p className="text-sm text-gray-600 group-hover:text-indigo-600 transition-colors line-clamp-2">无产阶级如何打破资产阶级的政治机器？</p>
-            </div>
-            <div className="flex gap-3 group cursor-pointer">
-              <span className="text-xs text-gray-400 shrink-0 pt-0.5">2024-05-18</span>
-              <p className="text-sm text-gray-600 group-hover:text-indigo-600 transition-colors line-clamp-2">列宁对改良主义的批判</p>
-            </div>
-            <div className="flex gap-3 group cursor-pointer">
-              <span className="text-xs text-gray-400 shrink-0 pt-0.5">2024-05-15</span>
-              <p className="text-sm text-gray-600 group-hover:text-indigo-600 transition-colors line-clamp-2">革命与暴力的辩证关系</p>
-            </div>
-          </div>
-        </div>
-
-        {/* 思维导图预览 */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex-1 min-h-[200px] flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-gray-800 font-medium text-sm">
-              <Network size={16} className="text-purple-500" />
-              思维导图
-            </div>
-            <button className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1"><Maximize size={12} /> 全屏查看</button>
-          </div>
-          
-          {/* 简易思维导图模拟 */}
-          <div className="flex-1 relative flex items-center justify-center">
-            <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-50 rounded-xl"></div>
-            
-            <div className="relative z-10 flex items-center w-full">
-              {/* 根节点 */}
-              <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg text-xs font-medium shadow-sm z-20">
-                资本的生产过程
-              </div>
-              
-              {/* 连线与子节点 */}
-              <div className="flex-1 relative h-32 ml-2">
-                {/* 连线 */}
-                <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
-                  <path d="M 0 64 C 20 64, 20 16, 40 16" fill="none" stroke="#cbd5e1" strokeWidth="1.5" />
-                  <path d="M 0 64 C 20 64, 20 64, 40 64" fill="none" stroke="#cbd5e1" strokeWidth="1.5" />
-                  <path d="M 0 64 C 20 64, 20 112, 40 112" fill="none" stroke="#cbd5e1" strokeWidth="1.5" />
-                </svg>
-                
-                {/* 子节点 */}
-                <div className="absolute top-[8px] left-[40px] px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-md text-[10px] font-medium whitespace-nowrap">
-                  劳动过程
-                </div>
-                <div className="absolute top-[56px] left-[40px] px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-md text-[10px] font-medium whitespace-nowrap">
-                  剩余价值生产
-                </div>
-                <div className="absolute top-[104px] left-[40px] px-2 py-1 bg-purple-50 border border-purple-200 text-purple-700 rounded-md text-[10px] font-medium whitespace-nowrap">
-                  资本主义关系
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </aside>
-
-    </div>
-  );
-};
-
-// 辅助组件
-const NavItem = ({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) => (
-  <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all ${active ? 'bg-indigo-50 text-indigo-600 font-medium shadow-sm shadow-indigo-100/50' : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900'}`}>
-    <div className={`${active ? 'text-indigo-600' : 'text-gray-400'}`}>{icon}</div>
-    <span className="text-sm">{label}</span>
-  </div>
-);
-
-const BookItem = ({ title, author, progress, coverColor, coverImage, active = false, status }: any) => {
-  // 如果 coverColor 是 hex 颜色，则使用 style，否则使用 className
-  const isHex = coverColor?.startsWith('#');
-  
-  return (
-  <div className={`flex gap-3 p-2 rounded-xl cursor-pointer transition-all mb-1 ${active ? 'bg-white shadow-sm border border-gray-100' : 'hover:bg-gray-100/50 border border-transparent'}`}>
-    <div 
-      className={`w-10 h-14 rounded-md ${!isHex && !coverImage ? coverColor : ''} shadow-inner flex-shrink-0 flex items-center justify-center overflow-hidden relative`}
-      style={coverImage ? { backgroundImage: `url(data:image/png;base64,${coverImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : (isHex ? { backgroundColor: coverColor } : {})}
-    >
-      <div className="absolute inset-0 bg-gradient-to-tr from-black/10 to-transparent"></div>
-      {!coverImage && <span className="text-[8px] font-serif text-white/80 writing-vertical-rl">{title.substring(0,4)}</span>}
-    </div>
-    <div className="flex flex-col justify-center flex-1 min-w-0">
-      <div className="text-sm font-medium text-gray-800 truncate">{title}</div>
-      <div className="text-xs text-gray-400 truncate mt-0.5">{author}</div>
-      <div className="flex items-center gap-2 mt-1.5">
-        <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-          <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${progress}%` }}></div>
-        </div>
-        <span className="text-[10px] text-gray-400">{status || `${progress}%`}</span>
-      </div>
-    </div>
-  </div>
-  );
-};
-
-const TocNodeComponent = ({ node, currentChapterIndex, onSelect }: any) => {
-  const [expanded, setExpanded] = useState(true);
-  const hasChildren = node.children && node.children.length > 0;
-  const isActive = currentChapterIndex === node.index;
-
-  return (
-    <div className="mb-0.5">
-      <div 
-        className={`flex items-center gap-1 py-1.5 cursor-pointer rounded-lg px-2 -ml-2 transition-colors ${isActive ? 'text-indigo-600 font-medium bg-indigo-50/80' : 'hover:text-gray-900 hover:bg-gray-100/50'}`}
-        onClick={() => onSelect(node.index)}
-      >
-        {hasChildren ? (
-          <div 
-            className="p-0.5 hover:bg-gray-200/80 rounded shrink-0 text-gray-400 hover:text-gray-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-          >
-            <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
-          </div>
-        ) : (
-          <div className="w-[18px] shrink-0 flex justify-center">
-            <div className="w-1 h-1 rounded-full bg-gray-300"></div>
-          </div>
-        )}
-        <span className="truncate">{node.title}</span>
-      </div>
-      
-      {hasChildren && expanded && (
-        <div className="ml-[9px] border-l border-gray-200/60 pl-2 mt-0.5">
-          {node.children.map((child: any) => (
-            <TocNodeComponent 
-              key={child.id} 
-              node={child} 
-              currentChapterIndex={currentChapterIndex} 
-              onSelect={onSelect} 
-            />
-          ))}
         </div>
       )}
     </div>

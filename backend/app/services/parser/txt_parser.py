@@ -74,7 +74,7 @@ class TXTParser:
                     self.chapters.append({
                         "index": chapter_index,
                         "title": current_chapter_title,
-                        "content": "\n".join(current_chapter_content)
+                        "elements": [{"type": "text", "content": p} for p in current_chapter_content]
                     })
                     chapter_index += 1
                 
@@ -89,15 +89,16 @@ class TXTParser:
             self.chapters.append({
                 "index": chapter_index,
                 "title": current_chapter_title,
-                "content": "\n".join(current_chapter_content)
+                "elements": [{"type": "text", "content": p} for p in current_chapter_content]
             })
             
         # 如果没有匹配到任何章节，则将整个文件作为一章
         if not self.chapters:
+            valid_lines = [l.strip() for l in lines if l.strip()]
             self.chapters.append({
                 "index": 0,
                 "title": "正文",
-                "content": "\n".join([l.strip() for l in lines if l.strip()])
+                "elements": [{"type": "text", "content": p} for p in valid_lines]
             })
             
         return self.chapters
