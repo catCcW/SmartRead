@@ -5,9 +5,8 @@ import os
 import shutil
 import random
 
-from database import get_db, Book, Chapter
-from services.parser.pdf_parser import PDFParser
-from services.parser.txt_parser import TXTParser
+from .database import get_db, Book, Chapter
+from .services.parser.parser_factory import ParserFactory
 
 app = FastAPI(title="SmartRead API")
 
@@ -34,6 +33,7 @@ def get_books(db: Session = Depends(get_db)):
             "author": b.author,
             "group": b.group_name,
             "coverColor": b.cover_color,
+            "coverImage": b.cover_image,
             "path": b.file_path,
             "type": b.file_type
         } for b in books
@@ -59,22 +59,37 @@ async def upload_book(file: UploadFile = File(...), db: Session = Depends(get_db
     # 随机生成一个封面颜色
     colors = ["#4A5568", "#D35400", "#2C3E50", "#27AE60", "#8E44AD", "#C0392B", "#2980B9"]
     cover_color = random.choice(colors)
+    cover_image = None
     
+    if file_type == "pdf":
+        try:
+            import fitz
+            import base64
+            doc = fitz.open(file_path)
+            page = doc[0]
+            # 渲染第一页作为封面，缩放以减小体积
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.3, 0.3))
+            cover_image = base64.b64encode(pix.tobytes("png")).decode('utf-8')
+            doc.close()
+        except Exception as e:
+            print(f"提取封面失败: {e}")
+
     # 创建书籍记录
     db_book = Book(
         title=title,
         file_path=file_path,
         file_type=file_type,
-        cover_color=cover_color
+        cover_color=cover_color,
+        cover_image=cover_image
     )
     db.add(db_book)
     db.commit()
     db.refresh(db_book)
     
-    # 如果是 TXT，进行智能断章并存入数据库
-    if file_type == "txt":
+    # 如果是文本类书籍 (TXT, EPUB, DOCX)，进行解析并存入数据库
+    if file_type in ["txt", "epub", "docx"]:
         try:
-            parser = TXTParser(file_path)
+            parser = ParserFactory.get_parser(file_path)
             chapters = parser.parse()
             for ch in chapters:
                 db_chapter = Chapter(
@@ -86,7 +101,7 @@ async def upload_book(file: UploadFile = File(...), db: Session = Depends(get_db
                 db.add(db_chapter)
             db.commit()
         except Exception as e:
-            print(f"TXT 解析失败: {e}")
+            print(f"{file_type.upper()} 解析失败: {e}")
             
     return {
         "id": db_book.id,
@@ -94,6 +109,7 @@ async def upload_book(file: UploadFile = File(...), db: Session = Depends(get_db
         "author": db_book.author,
         "group": db_book.group_name,
         "coverColor": db_book.cover_color,
+        "coverImage": db_book.cover_image,
         "path": db_book.file_path,
         "type": db_book.file_type,
         "message": "上传并解析成功"
@@ -106,15 +122,19 @@ def get_book_chapters(book_id: int, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(status_code=404, detail="书籍不存在")
         
-    if book.file_type == "txt":
+    if book.file_type in ["txt", "epub", "docx"]:
         chapters = db.query(Chapter).filter(Chapter.book_id == book_id).order_by(Chapter.chapter_index).all()
         return [{"index": c.chapter_index, "title": c.title} for c in chapters]
     elif book.file_type == "pdf":
         try:
-            parser = PDFParser(book.file_path)
-            total = parser.get_total_pages()
+            parser = ParserFactory.get_parser(book.file_path)
+            toc = parser.get_toc()
+            if not toc:
+                # 如果没有目录，则按页码生成
+                total = parser.get_total_pages()
+                toc = [{"index": i, "title": f"第 {i+1} 页", "level": 1} for i in range(total)]
             parser.close()
-            return [{"index": i, "title": f"第 {i+1} 页"} for i in range(total)]
+            return toc
         except:
             return []
     return []
@@ -130,7 +150,7 @@ def read_book_chapter(book_id: int, chapter_index: int = 0, db: Session = Depend
     book.current_chapter_index = chapter_index
     db.commit()
         
-    if book.file_type == "txt":
+    if book.file_type in ["txt", "epub", "docx"]:
         chapter = db.query(Chapter).filter(Chapter.book_id == book_id, Chapter.chapter_index == chapter_index).first()
         if not chapter:
             raise HTTPException(status_code=404, detail="章节不存在")
@@ -145,7 +165,7 @@ def read_book_chapter(book_id: int, chapter_index: int = 0, db: Session = Depend
         
     elif book.file_type == "pdf":
         try:
-            parser = PDFParser(book.file_path)
+            parser = ParserFactory.get_parser(book.file_path)
             elements = parser.parse_page(chapter_index)
             parser.close()
             

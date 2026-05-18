@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BookOpen, 
   Edit3, 
@@ -24,8 +24,121 @@ import {
   BookmarkPlus
 } from 'lucide-react';
 
+const API_BASE_URL = 'http://127.0.0.1:8000/api';
+
 const App = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [books, setBooks] = useState<any[]>([]);
+  const [currentBook, setCurrentBook] = useState<any>(null);
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [currentChapterIndex, setCurrentChapterIndex] = useState<number>(0);
+  const [chapterContent, setChapterContent] = useState<any>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isTocExpanded, setIsTocExpanded] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 获取书架列表
+  const fetchBooks = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/books`);
+      const data = await res.json();
+      setBooks(data);
+      if (data.length > 0 && !currentBook) {
+        handleSelectBook(data[0]);
+      }
+    } catch (error) {
+      console.error("获取书籍失败:", error);
+    }
+  };
+
+  // 选择书籍并获取目录
+  const handleSelectBook = async (book: any) => {
+    setCurrentBook(book);
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${book.id}/chapters`);
+      const data = await res.json();
+      setChapters(data);
+      if (data.length > 0) {
+        handleSelectChapter(book.id, data[0].index);
+      }
+    } catch (error) {
+      console.error("获取目录失败:", error);
+    }
+  };
+
+  // 选择章节并获取内容
+  const handleSelectChapter = async (bookId: number, chapterIndex: number) => {
+    setCurrentChapterIndex(chapterIndex);
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${bookId}/read?chapter_index=${chapterIndex}`);
+      const data = await res.json();
+      setChapterContent(data);
+    } catch (error) {
+      console.error("获取章节内容失败:", error);
+    }
+  };
+
+  // 上传书籍
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      await fetchBooks(); // 刷新书架
+      handleSelectBook(data); // 自动选中新上传的书
+    } catch (error) {
+      console.error("上传失败:", error);
+      alert("上传失败，请检查后端服务是否启动");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  useEffect(() => {
+    fetchBooks();
+  }, []);
+
+  // 将当前阅读的书籍排在最前面
+  const sortedBooks = [...books].sort((a, b) => {
+    if (currentBook && a.id === currentBook.id) return -1;
+    if (currentBook && b.id === currentBook.id) return 1;
+    return 0;
+  });
+
+  // 构建目录树
+  const buildTocTree = (flatToc: any[]) => {
+    const root: any[] = [];
+    const stack: any[] = [];
+
+    flatToc.forEach((item, i) => {
+      const node = { id: i, ...item, children: [] };
+      
+      while (stack.length > 0 && stack[stack.length - 1].level >= node.level) {
+        stack.pop();
+      }
+
+      if (stack.length === 0) {
+        root.push(node);
+      } else {
+        stack[stack.length - 1].children.push(node);
+      }
+      stack.push(node);
+    });
+
+    return root;
+  };
+
+  const tocTree = buildTocTree(chapters);
 
   return (
     <div className={`flex h-screen w-full overflow-hidden font-sans ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#F8F9FA] text-gray-800'}`}>
@@ -46,9 +159,20 @@ const App = () => {
 
         {/* 导入按钮 */}
         <div className="px-6 mb-6">
-          <button className="w-full py-2.5 rounded-full border border-indigo-200 text-indigo-600 font-medium flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept=".txt,.pdf" 
+            className="hidden" 
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="w-full py-2.5 rounded-full border border-indigo-200 text-indigo-600 font-medium flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+          >
             <Plus size={18} />
-            导入书籍
+            {isUploading ? '正在解析...' : '导入书籍'}
           </button>
         </div>
 
@@ -63,62 +187,56 @@ const App = () => {
         </div>
 
         {/* 我的书库 */}
-        <div className="px-6 mb-2 flex items-center justify-between text-sm font-medium text-gray-500">
+        <div className="px-6 mb-2 flex items-center justify-between text-sm font-medium text-gray-500 shrink-0">
           <span>我的书库</span>
           <Search size={14} className="cursor-pointer hover:text-gray-800" />
         </div>
         
-        <div className="flex-1 overflow-y-auto px-3 custom-scrollbar">
-          <BookItem 
-            title="资本论 (第一卷)" 
-            author="卡尔·马克思" 
-            progress={62} 
-            coverColor="bg-amber-100" 
-            active 
-          />
-          <BookItem 
-            title="共产党宣言" 
-            author="马克思、恩格斯" 
-            progress={100} 
-            coverColor="bg-red-800" 
-            status="已读完"
-          />
-          <BookItem 
-            title="人类简史" 
-            author="尤瓦尔·赫拉利" 
-            progress={38} 
-            coverColor="bg-gray-200" 
-          />
-          <BookItem 
-            title="乡土中国" 
-            author="费孝通" 
-            progress={12} 
-            coverColor="bg-slate-200" 
-          />
+        <div className="max-h-[180px] overflow-y-auto px-3 custom-scrollbar shrink-0">
+          {sortedBooks.map(book => (
+            <div key={book.id} onClick={() => handleSelectBook(book)}>
+              <BookItem 
+                title={book.title} 
+                author={book.author || "未知作者"} 
+                progress={0} 
+                coverColor={book.coverColor || "bg-indigo-100"} 
+                coverImage={book.coverImage}
+                active={currentBook?.id === book.id} 
+              />
+            </div>
+          ))}
           
-          <button className="w-full py-2 mt-2 text-xs text-gray-500 hover:text-gray-800 bg-gray-100/50 rounded-lg">
-            更多书籍
-          </button>
-
-          {/* 目录 */}
-          <div className="mt-8 mb-2 flex items-center justify-between text-sm font-medium text-gray-800 px-3">
-            <span>目录</span>
-            <ChevronDown size={16} />
-          </div>
-          <div className="flex flex-col text-sm text-gray-600">
-            <DirItem label="第一章 商品和货币" />
-            <DirItem label="第二章 货币的流通" />
-            <DirItem label="第三章 资本的生产过程" expanded active>
-              <div className="pl-4 py-1 text-indigo-600 bg-indigo-50 rounded-md my-1 cursor-pointer">3.1 劳动过程和价值增殖过程</div>
-              <div className="pl-4 py-1 hover:bg-gray-100 rounded-md my-1 cursor-pointer">3.2 剩余价值的生产</div>
-              <div className="pl-4 py-1 hover:bg-gray-100 rounded-md my-1 cursor-pointer">3.3 绝对剩余价值的生产</div>
-              <div className="pl-4 py-1 hover:bg-gray-100 rounded-md my-1 cursor-pointer">3.4 相对剩余价值的生产</div>
-            </DirItem>
-            <DirItem label="第四章 资本的流通过程" />
-            <DirItem label="第五章 资本和剩余价值的分割" />
-            <DirItem label="第六章 工资" />
-          </div>
+          {books.length === 0 && (
+            <div className="text-center text-xs text-gray-400 py-4">暂无书籍，请先导入</div>
+          )}
         </div>
+
+        {/* 目录 */}
+        {currentBook && chapters.length > 0 && (
+          <div className={`flex flex-col mt-4 border-t border-gray-100 pt-4 ${isTocExpanded ? 'flex-1 min-h-0' : 'shrink-0'}`}>
+            <div 
+              className="mb-3 flex items-center justify-between text-sm font-medium text-gray-800 px-6 shrink-0 cursor-pointer hover:text-indigo-600 transition-colors"
+              onClick={() => setIsTocExpanded(!isTocExpanded)}
+            >
+              <span>目录</span>
+              <ChevronDown size={16} className={`transition-transform duration-200 ${!isTocExpanded ? '-rotate-90' : ''}`} />
+            </div>
+            {isTocExpanded && (
+              <div className="flex-1 overflow-y-auto px-3 custom-scrollbar">
+                <div className="flex flex-col text-sm text-gray-600 pb-4">
+                  {tocTree.map((node) => (
+                    <TocNodeComponent 
+                      key={node.id} 
+                      node={node} 
+                      currentChapterIndex={currentChapterIndex} 
+                      onSelect={(index: number) => handleSelectChapter(currentBook.id, index)} 
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 底部用户信息 */}
         <div className="p-4 border-t border-gray-200/50 flex items-center gap-3">
@@ -142,10 +260,10 @@ const App = () => {
         {/* 顶部工具栏 */}
         <header className="h-14 border-b border-gray-100 flex items-center justify-between px-6 text-sm text-gray-600">
           <div className="flex items-center gap-2 font-medium">
-            <span className="text-gray-800">资本论 (第一卷)</span>
+            <span className="text-gray-800">{currentBook?.title || "未选择书籍"}</span>
             <ChevronDown size={14} className="text-gray-400" />
             <span className="text-gray-300 mx-2">|</span>
-            <span className="text-gray-500">第三章 资本的生产过程</span>
+            <span className="text-gray-500">{chapterContent?.title || "未选择章节"}</span>
             <ChevronRight size={14} className="text-gray-400" />
           </div>
           
@@ -167,98 +285,59 @@ const App = () => {
         <div className="flex-1 overflow-y-auto custom-scrollbar relative flex justify-center pb-40">
           <div className="w-full max-w-[720px] px-12 py-16 text-[17px] leading-[2.2] text-gray-800 tracking-[0.02em] font-serif">
             
-            <p className="mb-6">
-              资本家购买劳动力的价格，或工人的劳动力的价格，是由劳动力的价值决定的。
-            </p>
-            
-            <p className="mb-6">
-              劳动力的价值，或工人维持他的劳动力的生活资料的价值，是由生产和再生产这种劳动力所必需的劳动时间决定的。
-            </p>
-            
-            <p className="mb-6">
-              因此，劳动力的价值同任何别的商品的价值一样，是由生产这种使用价值所必要的社会必要劳动时间决定的。
-            </p>
-
-            {/* AI 标注段落 - 批判观点 */}
-            <div className="relative mb-6 group">
-              <div className="absolute -left-6 top-2 bottom-2 w-1 bg-amber-400 rounded-full"></div>
-              <div className="absolute -left-[27px] top-3 w-2 h-2 rounded-full bg-amber-400 border-2 border-white shadow-sm"></div>
-              <p className="bg-amber-50/50 rounded-lg p-1 -ml-1">
-                无产阶级在议会和报刊方面，只要同资产阶级保持平等，就意味着屈服。
-              </p>
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-full pl-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium whitespace-nowrap">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                  批判观点
-                </span>
+            {chapterContent ? (
+              chapterContent.elements.map((el: any, idx: number) => {
+                if (el.type === 'image') {
+                  return (
+                    <div key={idx} className="my-8 flex justify-center">
+                      <img 
+                        src={`data:image/${el.ext || 'jpeg'};base64,${el.content}`} 
+                        alt={`Page image ${idx}`} 
+                        className="max-w-full h-auto rounded-lg shadow-sm border border-gray-100"
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <p key={idx} className="mb-6">
+                    {el.content}
+                  </p>
+                );
+              })
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 mt-20">
+                <BookOpen size={48} className="mb-4 opacity-20" />
+                <p>请在左侧选择书籍和章节开始阅读</p>
               </div>
-            </div>
-
-            {/* AI 标注段落 - 核心论点 */}
-            <div className="relative mb-6 group">
-              <div className="absolute -left-6 top-2 bottom-2 w-1 bg-indigo-400 rounded-full"></div>
-              <div className="absolute -left-[27px] top-3 w-2 h-2 rounded-full bg-indigo-400 border-2 border-white shadow-sm"></div>
-              <p className="bg-indigo-50/50 rounded-lg p-1 -ml-1 font-medium">
-                无产阶级只有当它不顾一切地打破这个机器的时候，才能把自己的思想强加给资产阶级。
-              </p>
-              
-              {/* 悬浮工具栏模拟 */}
-              <div className="absolute left-1/2 -top-12 -translate-x-1/2 bg-white shadow-xl rounded-lg border border-gray-100 px-3 py-2 flex items-center gap-3 z-20">
-                <div className="flex gap-2">
-                  <button className="w-5 h-5 rounded-full bg-amber-300 hover:scale-110 transition-transform"></button>
-                  <button className="w-5 h-5 rounded-full bg-red-400 hover:scale-110 transition-transform"></button>
-                  <button className="w-5 h-5 rounded-full bg-green-400 hover:scale-110 transition-transform"></button>
-                  <button className="w-5 h-5 rounded-full bg-blue-400 hover:scale-110 transition-transform"></button>
-                  <button className="w-5 h-5 rounded-full bg-purple-400 hover:scale-110 transition-transform"></button>
-                </div>
-                <div className="w-px h-4 bg-gray-200"></div>
-                <button className="text-gray-500 hover:text-indigo-600"><Edit3 size={16} /></button>
-                <button className="text-gray-500 hover:text-indigo-600"><MessageSquare size={16} /></button>
-                <button className="text-gray-500 hover:text-indigo-600"><Network size={16} /></button>
-              </div>
-            </div>
-
-            {/* AI 标注段落 - 引用 */}
-            <div className="relative mb-6 group">
-              <div className="absolute -left-6 top-2 bottom-2 w-1 bg-blue-400 rounded-full"></div>
-              <div className="absolute -left-[27px] top-3 w-2 h-2 rounded-full bg-blue-400 border-2 border-white shadow-sm"></div>
-              <p className="bg-blue-50/50 rounded-lg p-1 -ml-1">
-                无产阶级如果不利用特殊的革命手段，即利用旧世界本身的力量和武器来推翻旧世界，就不可能建立自己的统治。
-              </p>
-            </div>
-
-            {/* AI 标注段落 - 作者观点 */}
-            <div className="relative mb-6 group">
-              <div className="absolute -left-6 top-2 bottom-2 w-1 bg-emerald-400 rounded-full"></div>
-              <div className="absolute -left-[27px] top-3 w-2 h-2 rounded-full bg-emerald-400 border-2 border-white shadow-sm"></div>
-              <p className="bg-emerald-50/50 rounded-lg p-1 -ml-1">
-                在这里，无产阶级不可能用和平手段实现自己的目的。
-              </p>
-            </div>
-
-            <p className="mb-12">
-              当这个阶级用革命的暴力推翻资产阶级而同时没有消灭资产阶级生存的条件的时候，它就为自己的消灭准备了条件。
-            </p>
-
-            <div className="text-right text-gray-400 text-sm italic">
-              ——摘自《资本论》第一卷
-            </div>
+            )}
 
           </div>
         </div>
 
         {/* 底部阅读控制栏 */}
         <div className="absolute bottom-28 left-1/2 -translate-x-1/2 w-[600px] bg-white/80 backdrop-blur-md border border-gray-200/60 rounded-full px-6 py-3 flex items-center justify-between shadow-lg shadow-gray-200/20 z-20">
-          <button className="text-gray-400 hover:text-gray-800"><ChevronLeft size={20} /></button>
+          <button 
+            className="text-gray-400 hover:text-gray-800 disabled:opacity-30"
+            onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.max(0, currentChapterIndex - 1))}
+            disabled={currentChapterIndex === 0}
+          >
+            <ChevronLeft size={20} />
+          </button>
           <div className="flex items-center gap-4 flex-1 px-8">
-            <span className="text-xs text-gray-500 w-16 text-right">128 / 685页</span>
+            <span className="text-xs text-gray-500 w-16 text-right">{currentChapterIndex + 1} / {chapters.length || 1}页</span>
             <div className="flex-1 h-1 bg-gray-200 rounded-full relative cursor-pointer">
               <div className="absolute left-0 top-0 bottom-0 w-[20%] bg-indigo-500 rounded-full"></div>
               <div className="absolute left-[20%] top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-2 border-indigo-500 rounded-full shadow-sm"></div>
             </div>
-            <span className="text-xs text-gray-500 w-12">125%</span>
+            <span className="text-xs text-gray-500 w-12">100%</span>
           </div>
-          <button className="text-gray-400 hover:text-gray-800"><Maximize size={16} /></button>
+          <button 
+            className="text-gray-400 hover:text-gray-800 disabled:opacity-30"
+            onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.min(chapters.length - 1, currentChapterIndex + 1))}
+            disabled={currentChapterIndex >= chapters.length - 1}
+          >
+            <ChevronRight size={20} />
+          </button>
         </div>
 
         {/* 底部 AI 对话区 */}
@@ -461,11 +540,18 @@ const NavItem = ({ icon, label, active = false }: { icon: React.ReactNode, label
   </div>
 );
 
-const BookItem = ({ title, author, progress, coverColor, active = false, status }: any) => (
+const BookItem = ({ title, author, progress, coverColor, coverImage, active = false, status }: any) => {
+  // 如果 coverColor 是 hex 颜色，则使用 style，否则使用 className
+  const isHex = coverColor?.startsWith('#');
+  
+  return (
   <div className={`flex gap-3 p-2 rounded-xl cursor-pointer transition-all mb-1 ${active ? 'bg-white shadow-sm border border-gray-100' : 'hover:bg-gray-100/50 border border-transparent'}`}>
-    <div className={`w-10 h-14 rounded-md ${coverColor} shadow-inner flex-shrink-0 flex items-center justify-center overflow-hidden relative`}>
+    <div 
+      className={`w-10 h-14 rounded-md ${!isHex && !coverImage ? coverColor : ''} shadow-inner flex-shrink-0 flex items-center justify-center overflow-hidden relative`}
+      style={coverImage ? { backgroundImage: `url(data:image/png;base64,${coverImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : (isHex ? { backgroundColor: coverColor } : {})}
+    >
       <div className="absolute inset-0 bg-gradient-to-tr from-black/10 to-transparent"></div>
-      <span className="text-[8px] font-serif text-black/40 writing-vertical-rl">{title.substring(0,4)}</span>
+      {!coverImage && <span className="text-[8px] font-serif text-white/80 writing-vertical-rl">{title.substring(0,4)}</span>}
     </div>
     <div className="flex flex-col justify-center flex-1 min-w-0">
       <div className="text-sm font-medium text-gray-800 truncate">{title}</div>
@@ -478,20 +564,52 @@ const BookItem = ({ title, author, progress, coverColor, active = false, status 
       </div>
     </div>
   </div>
-);
+  );
+};
 
-const DirItem = ({ label, expanded = false, active = false, children }: any) => (
-  <div className="mb-1">
-    <div className={`flex items-center gap-1.5 py-1.5 cursor-pointer ${active ? 'text-gray-900 font-medium' : 'hover:text-gray-900'}`}>
-      <ChevronRight size={14} className={`text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-      <span className="truncate">{label}</span>
-    </div>
-    {expanded && children && (
-      <div className="ml-3 border-l border-gray-200 pl-2">
-        {children}
+const TocNodeComponent = ({ node, currentChapterIndex, onSelect }: any) => {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = node.children && node.children.length > 0;
+  const isActive = currentChapterIndex === node.index;
+
+  return (
+    <div className="mb-0.5">
+      <div 
+        className={`flex items-center gap-1 py-1.5 cursor-pointer rounded-lg px-2 -ml-2 transition-colors ${isActive ? 'text-indigo-600 font-medium bg-indigo-50/80' : 'hover:text-gray-900 hover:bg-gray-100/50'}`}
+        onClick={() => onSelect(node.index)}
+      >
+        {hasChildren ? (
+          <div 
+            className="p-0.5 hover:bg-gray-200/80 rounded shrink-0 text-gray-400 hover:text-gray-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+          >
+            <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
+          </div>
+        ) : (
+          <div className="w-[18px] shrink-0 flex justify-center">
+            <div className="w-1 h-1 rounded-full bg-gray-300"></div>
+          </div>
+        )}
+        <span className="truncate">{node.title}</span>
       </div>
-    )}
-  </div>
-);
+      
+      {hasChildren && expanded && (
+        <div className="ml-[9px] border-l border-gray-200/60 pl-2 mt-0.5">
+          {node.children.map((child: any) => (
+            <TocNodeComponent 
+              key={child.id} 
+              node={child} 
+              currentChapterIndex={currentChapterIndex} 
+              onSelect={onSelect} 
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default App;

@@ -22,6 +22,7 @@ class Book(Base):
     author = Column(String, default="未知作者")
     group_name = Column(String, default="全部书籍")
     cover_color = Column(String, default="#34495E")
+    cover_image = Column(Text, nullable=True) # Base64 封面图
     file_path = Column(String)
     file_type = Column(String) # pdf, txt, epub
     current_chapter_index = Column(Integer, default=0)
