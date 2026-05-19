@@ -18,6 +18,7 @@ interface SecondarySidebarProps {
   tocTree: any[];
   currentChapterIndex: number;
   handleSelectChapter: (bookId: number, chapterIndex: number) => void;
+  onMoreBooksClick?: () => void;
 }
 
 const BookItem = ({ title, author, progress, coverColor, coverImage, active = false, status }: any) => {
@@ -117,7 +118,8 @@ const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
   setIsTocExpanded,
   tocTree,
   currentChapterIndex,
-  handleSelectChapter
+  handleSelectChapter,
+  onMoreBooksClick
 }) => {
   return (
     <aside className={`flex flex-col border-r ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-[#FAFAFC]'} transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${isSidebarOpen ? 'w-[260px]' : 'w-0 border-r-0'}`}>
@@ -181,6 +183,18 @@ const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
           <div className="text-center text-xs text-gray-400 py-4">暂无书籍，请先导入</div>
         )}
       </div>
+
+      {/* 更多书籍按钮 */}
+      {books.length > 0 && (
+        <div className="px-4 mt-2 mb-2 shrink-0">
+          <button 
+            onClick={onMoreBooksClick}
+            className="w-full py-2 rounded-xl bg-gray-100/80 text-gray-600 text-[13px] font-medium hover:bg-gray-200/80 transition-colors"
+          >
+            更多书籍
+          </button>
+        </div>
+      )}
 
       {/* 目录 */}
       {currentBook && chapters.length > 0 && (

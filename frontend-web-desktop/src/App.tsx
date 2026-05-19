@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   BookOpen, Edit3, Network, MessageSquare, Settings, Sun, Moon, 
-  ChevronLeft, ChevronRight, ChevronDown, Maximize, Minus, Send, Bot, 
+  ChevronLeft, ChevronRight, ChevronDown, Maximize, Minimize, Minus, Send, Bot, 
   LayoutTemplate, Lightbulb, List
 } from 'lucide-react';
 import Library from './components/Library';
@@ -22,6 +22,7 @@ const App = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isTocExpanded, setIsTocExpanded] = useState(true);
   const [isAiChatExpanded, setIsAiChatExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // 数据状态
   const [books, setBooks] = useState<any[]>([]);
@@ -272,7 +273,7 @@ const App = () => {
     if (!currentBook || !content.trim()) return;
     
     try {
-      const res = await fetch(`${API_BASE_URL}/book/${currentBook.id}/notes`, {
+      const res = await fetch(`${API_BASE_URL}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -411,6 +412,25 @@ const App = () => {
   const tocTree = buildTocTree(chapters);
   const progressPercent = chapters.length > 1 ? (currentChapterIndex / (chapters.length - 1)) * 100 : 0;
 
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    // 简单的 Markdown 解析
+    let html = text
+      // 处理标题 ### 标题
+      .replace(/^### (.*$)/gim, '<h3 class="text-[15px] font-bold text-gray-800 mt-3 mb-1">$1</h3>')
+      // 处理标题 ## 标题
+      .replace(/^## (.*$)/gim, '<h2 class="text-base font-bold text-gray-800 mt-4 mb-2">$1</h2>')
+      // 处理加粗 **加粗**
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+      // 处理换行
+      .replace(/\n/g, '<br/>')
+      // 处理列表项 - 列表项
+      .replace(/(?:<br\/>|^)- (.*?)(?=<br\/>|$)/g, '<li class="ml-4 list-disc">$1</li>');
+      
+    return <div dangerouslySetInnerHTML={{ __html: html }} className="markdown-content" />;
+  };
+
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!currentBook || chapters.length === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -425,108 +445,144 @@ const App = () => {
   return (
     <div className={`flex h-screen w-full overflow-hidden font-sans ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#F8F9FA] text-gray-800'}`}>
       
-      <PrimaryNav isDarkMode={isDarkMode} activeTab={activeTab} setActiveTab={setActiveTab} />
+      {!isFullscreen && <PrimaryNav isDarkMode={isDarkMode} activeTab={activeTab} setActiveTab={setActiveTab} />}
 
       {activeTab === '阅读' && (
         <>
-          <SecondarySidebar 
-            isDarkMode={isDarkMode}
-            isSidebarOpen={isSidebarOpen}
-            setIsSidebarOpen={setIsSidebarOpen}
-            isUploading={isUploading}
-            handleFileUpload={handleFileUpload}
-            fileInputRef={fileInputRef}
-            sortedBooks={sortedBooks}
-            currentBook={currentBook}
-            handleSelectBook={handleSelectBook}
-            books={books}
-            chapters={chapters}
-            isTocExpanded={isTocExpanded}
-            setIsTocExpanded={setIsTocExpanded}
-            tocTree={tocTree}
-            currentChapterIndex={currentChapterIndex}
-            handleSelectChapter={handleSelectChapter}
-          />
+          {!isFullscreen && (
+            <SecondarySidebar 
+              isDarkMode={isDarkMode}
+              isSidebarOpen={isSidebarOpen}
+              setIsSidebarOpen={setIsSidebarOpen}
+              isUploading={isUploading}
+              handleFileUpload={handleFileUpload}
+              fileInputRef={fileInputRef}
+              sortedBooks={sortedBooks}
+              currentBook={currentBook}
+              handleSelectBook={handleSelectBook}
+              books={books}
+              chapters={chapters}
+              isTocExpanded={isTocExpanded}
+              setIsTocExpanded={setIsTocExpanded}
+              tocTree={tocTree}
+              currentChapterIndex={currentChapterIndex}
+              handleSelectChapter={handleSelectChapter}
+              onMoreBooksClick={() => setActiveTab('书库')}
+            />
+          )}
 
           <div className="flex-1 flex flex-col min-w-0 bg-[#F8F9FA]">
             {/* 顶部工具栏 */}
-            <header className="h-14 border-b border-gray-200/60 flex items-center justify-between px-6 text-sm text-gray-600 shrink-0 bg-white z-20">
-              <div className="flex items-center gap-1 font-medium">
-                <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-100/50 hover:bg-gray-100 rounded-full cursor-pointer transition-colors">
-                  <span className="text-gray-800 font-bold">{currentBook?.title || "未选择书籍"}</span>
-                  <ChevronDown size={14} className="text-gray-400" />
+            {!isFullscreen && (
+              <header className="h-14 border-b border-gray-200/60 flex items-center justify-between px-6 text-sm text-gray-600 shrink-0 bg-white z-20">
+                <div className="flex items-center gap-2 font-medium">
+                  <div className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-gray-50 rounded-md cursor-pointer transition-colors">
+                    <span className="text-gray-800 font-bold">{currentBook?.title || "未选择书籍"}</span>
+                    <ChevronDown size={14} className="text-gray-400" />
+                  </div>
+                  <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500 cursor-pointer hover:text-gray-800 transition-colors">
+                    <div className="w-1 h-1 bg-gray-300 rotate-45 rounded-[1px]"></div>
+                    <span>{chapterContent?.title || "未选择章节"}</span>
+                    <ChevronRight size={14} className="text-gray-400" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500 cursor-pointer hover:text-gray-800 transition-colors">
-                  <div className="w-1.5 h-1.5 bg-gray-300 rotate-45 rounded-[1px]"></div>
-                  <span>{chapterContent?.title || "未选择章节"}</span>
-                  <ChevronRight size={14} className="text-gray-400" />
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-5">
-                {!isSidebarOpen && (
-                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors text-indigo-500" onClick={() => setIsSidebarOpen(true)}>
-                    <LayoutTemplate size={16} /> 展开侧边栏
+                
+                <div className="flex items-center gap-5">
+                  {!isSidebarOpen && (
+                    <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors text-indigo-500" onClick={() => setIsSidebarOpen(true)}>
+                      <LayoutTemplate size={16} /> 展开侧边栏
+                    </button>
+                  )}
+                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><LayoutTemplate size={16} /> 版式</button>
+                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors" onClick={() => setIsDarkMode(!isDarkMode)}>
+                    {isDarkMode ? <Sun size={16} /> : <Moon size={16} />} 主题
                   </button>
-                )}
-                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><LayoutTemplate size={16} /> 版式</button>
-                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors" onClick={() => setIsDarkMode(!isDarkMode)}>
-                  {isDarkMode ? <Sun size={16} /> : <Moon size={16} />} 主题
-                </button>
-                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><span className="font-serif font-bold text-[15px]">Aa</span> 字体</button>
-                <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><List size={16} /> <ChevronDown size={12} className="text-gray-400 -ml-0.5" /></button>
-                <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                <button className="hover:text-gray-900"><Minus size={16} /></button>
-                <button className="hover:text-gray-900"><Maximize size={14} /></button>
-                <button className="hover:text-gray-900">✕</button>
-              </div>
-            </header>
+                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><span className="font-serif font-bold text-[15px]">Aa</span> 字体</button>
+                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><List size={16} /> <ChevronDown size={12} className="text-gray-400 -ml-0.5" /></button>
+                  <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                  <button className="hover:text-gray-900"><Minus size={16} /></button>
+                  <button className="hover:text-gray-900" onClick={() => setIsFullscreen(true)}><Maximize size={14} /></button>
+                  <button className="hover:text-gray-900">✕</button>
+                </div>
+              </header>
+            )}
 
             <div className="flex-1 flex overflow-hidden">
               {/* 划词悬浮菜单 */}
               {selectionMenu.visible && (
                 <div 
-                  className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 px-2 flex items-center gap-1 transform -translate-x-1/2 -translate-y-full"
+                  className="fixed z-50 bg-white rounded-full shadow-lg border border-gray-100 py-2 px-4 flex items-center gap-3 transform -translate-x-1/2 -translate-y-full -mt-2"
                   style={{ left: selectionMenu.x, top: selectionMenu.y }}
                 >
-                  <button 
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
-                    onClick={() => {
-                      setChatInput(selectionMenu.text);
-                      setCompanionAction('explain');
-                      setIsAiChatExpanded(true);
-                      setSelectionMenu(prev => ({ ...prev, visible: false }));
-                    }}
-                  >
-                    <Bot size={14} /> AI 解读
-                  </button>
+                  {/* 颜色选择器 */}
+                  <div className="flex items-center gap-2">
+                    <button className="w-4 h-4 rounded-full bg-[#FDE68A] hover:scale-110 transition-transform"></button>
+                    <button className="w-4 h-4 rounded-full bg-[#FECACA] hover:scale-110 transition-transform"></button>
+                    <button className="w-4 h-4 rounded-full bg-[#A7F3D0] hover:scale-110 transition-transform"></button>
+                    <button className="w-4 h-4 rounded-full bg-[#BFDBFE] hover:scale-110 transition-transform"></button>
+                    <button className="w-4 h-4 rounded-full bg-[#DDD6FE] hover:scale-110 transition-transform"></button>
+                  </div>
+                  
                   <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                  <button 
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
-                    onClick={handleSemanticMark}
-                    disabled={isMarking}
-                  >
-                    {isMarking ? (
-                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-indigo-600"></div>
-                    ) : (
-                      <Lightbulb size={14} />
-                    )}
-                    {isMarking ? '标记中...' : 'AI 标记'}
-                  </button>
-                  <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                  <button 
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
-                    onClick={() => {
-                      setNoteModal({
-                        visible: true,
-                        text: selectionMenu.text,
-                        paragraphIndex: selectionMenu.paragraphIndex
-                      });
-                      setSelectionMenu(prev => ({ ...prev, visible: false }));
-                    }}
-                  >
-                    <Edit3 size={14} /> 记笔记
-                  </button>
+                  
+                  {/* 操作图标 */}
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <button 
+                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                      title="复制"
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectionMenu.text);
+                        setSelectionMenu(prev => ({ ...prev, visible: false }));
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                    <button 
+                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                      title="记笔记"
+                      onClick={() => {
+                        setNoteModal({
+                          visible: true,
+                          text: selectionMenu.text,
+                          paragraphIndex: selectionMenu.paragraphIndex
+                        });
+                        setSelectionMenu(prev => ({ ...prev, visible: false }));
+                      }}
+                    >
+                      <Edit3 size={16} />
+                    </button>
+                    <button 
+                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                      title="AI 解读"
+                      onClick={() => {
+                        setChatInput(selectionMenu.text);
+                        setCompanionAction('explain');
+                        setIsAiChatExpanded(true);
+                        setSelectionMenu(prev => ({ ...prev, visible: false }));
+                      }}
+                    >
+                      <Bot size={16} />
+                    </button>
+                    <button 
+                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                      title="AI 语义标记"
+                      onClick={handleSemanticMark}
+                      disabled={isMarking}
+                    >
+                      {isMarking ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                      ) : (
+                        <Lightbulb size={16} />
+                      )}
+                    </button>
+                    <button 
+                      className="p-1 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                      title="删除"
+                      onClick={() => setSelectionMenu(prev => ({ ...prev, visible: false }))}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -583,128 +639,107 @@ const App = () => {
                 </div>
 
                 {/* 底部控制与 AI 区域 */}
-                <div className="w-full flex justify-center shrink-0 bg-[#F8F9FA]/80 backdrop-blur-md pt-4 pb-6 z-20">
-                  <div className="w-full max-w-[720px] px-12 flex flex-col gap-4">
+                <div className="w-full flex justify-center shrink-0 bg-[#F8F9FA]/80 backdrop-blur-md pt-2 pb-6 z-20">
+                  <div className="w-full max-w-[720px] px-12 flex flex-col gap-6">
                     {/* 进度条 */}
-                    <div className="w-full bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-3 flex items-center justify-between">
+                    <div className="w-full flex items-center justify-between px-2 gap-4">
                       <button 
                         className="text-gray-400 hover:text-gray-800 disabled:opacity-30 transition-colors p-1"
                         onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.max(0, currentChapterIndex - 1))}
                         disabled={currentChapterIndex === 0}
+                        title="上一页"
                       ><ChevronLeft size={18} /></button>
-                      <div className="flex items-center gap-4 flex-1 px-6">
-                        <span className="text-xs text-gray-500 w-16 text-right">{currentChapterIndex + 1} / {chapters.length || 1}页</span>
-                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full relative cursor-pointer group" onClick={handleProgressClick}>
+                      
+                      <div className="flex items-center gap-4 flex-1 px-2">
+                        <span className="text-xs text-gray-500 whitespace-nowrap">{currentChapterIndex + 1} / {chapters.length || 1}页</span>
+                        
+                        <div className="flex-1 h-1.5 bg-gray-200 rounded-full relative cursor-pointer group" onClick={handleProgressClick}>
                           <div className="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full transition-all duration-300 ease-out" style={{ width: `${progressPercent}%` }}></div>
-                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-indigo-500 rounded-full shadow-sm transition-all duration-300 ease-out group-hover:scale-110" style={{ left: `calc(${progressPercent}% - 7px)` }}></div>
+                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-indigo-500 rounded-full shadow-sm transition-all duration-300 ease-out group-hover:scale-125" style={{ left: `calc(${progressPercent}% - 7px)` }}></div>
                         </div>
-                        <span className="text-xs text-gray-500 w-12">{Math.round(progressPercent)}%</span>
+                        
+                        <span className="text-xs text-gray-500 w-8 text-right">{Math.round(progressPercent)}%</span>
                       </div>
+                      
                       <button 
                         className="text-gray-400 hover:text-gray-800 disabled:opacity-30 transition-colors p-1"
                         onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.min(chapters.length - 1, currentChapterIndex + 1))}
-                        disabled={currentChapterIndex >= chapters.length - 1}
+                        disabled={currentChapterIndex === chapters.length - 1}
+                        title="下一页"
                       ><ChevronRight size={18} /></button>
+
+                      <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
+                      <button 
+                        className="text-gray-400 hover:text-gray-800 transition-colors p-1"
+                        onClick={() => setIsFullscreen(!isFullscreen)}
+                        title={isFullscreen ? "退出全屏" : "全屏阅读"}
+                      >
+                        {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                      </button>
                     </div>
 
-                    {/* AI 对话区 */}
-                    <div className="flex justify-center">
-                      <div 
-                        className={`bg-white border border-gray-100 shadow-sm overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col relative ${isAiChatExpanded ? 'w-full h-[320px] rounded-3xl' : 'w-[180px] h-[52px] rounded-full cursor-pointer hover:bg-gray-50 hover:shadow-md'}`}
-                        onClick={() => !isAiChatExpanded && setIsAiChatExpanded(true)}
-                      >
-                        <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 ${isAiChatExpanded ? 'opacity-100 pointer-events-auto delay-100' : 'opacity-0 pointer-events-none'}`}>
-                          <button className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10" onClick={(e) => { e.stopPropagation(); setIsAiChatExpanded(false); }} title="收起 AI 伴读">
-                            <ChevronDown size={18} />
-                          </button>
-
-                          <div className="p-6 pb-2 flex-1 overflow-y-auto custom-scrollbar">
-                            <div className="flex gap-4">
-                              <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-200/50">
-                                <Bot size={22} />
-                              </div>
-                              <div className="flex-1 pr-6">
-                                <div className="flex items-center gap-3 mb-3">
-                                  <span className="font-semibold text-[15px] text-gray-800">AI 伴读</span>
-                                  <div className="flex gap-2">
-                                    {['chat', 'explain', 'translate', 'background', 'extend'].map(action => (
-                                      <span 
-                                        key={action}
-                                        onClick={() => handleModeSwitch(action)}
-                                        className={`text-[11px] px-2.5 py-1 rounded-full cursor-pointer font-medium transition-colors ${companionAction === action ? 'bg-indigo-50 text-indigo-600' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-                                      >
-                                        {action === 'chat' ? '对话' : action === 'explain' ? '解释' : action === 'translate' ? '翻译' : action === 'background' ? '背景' : '延伸思考'}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="text-[14px] text-gray-700 leading-[1.8] whitespace-pre-wrap">
-                                  {isCompanionLoading ? (
-                                    <div className="flex items-center gap-2 text-gray-400">
-                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
-                                      AI 正在思考...
-                                    </div>
-                                  ) : (
-                                    companionResult || "请选择上方功能或在下方输入问题与 AI 交流。"
-                                  )}
-                                </div>
-                                
-                                {/* 延伸思考推荐 */}
-                                {!isCompanionLoading && !companionResult && aiAnalysis?.extendedThoughts && aiAnalysis.extendedThoughts.length > 0 && (
-                                  <div className="mt-4 space-y-2">
-                                    <div className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                                      <Lightbulb size={12} className="text-amber-500" /> 延伸思考建议：
-                                    </div>
-                                    <div className="flex flex-col gap-2">
-                                      {aiAnalysis.extendedThoughts.map((thought: string, idx: number) => (
-                                        <button 
-                                          key={idx}
-                                          onClick={() => {
-                                            setChatInput(thought);
-                                            setCompanionAction('chat');
-                                            // 可选：点击建议后直接发送，或者只填入输入框让用户自己点发送
-                                            // 这里选择填入输入框并切换到对话模式，让用户自己决定是否发送
-                                          }}
-                                          className="text-left text-[13px] text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 px-3 py-2 rounded-lg transition-colors border border-indigo-100/50"
-                                        >
-                                          {thought}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="p-4 pt-2 shrink-0">
-                            <div className="relative flex items-center">
-                              <input 
-                                type="text" 
-                                value={chatInput}
-                                onChange={(e) => setChatInput(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && submitCompanionRequest()}
-                                placeholder={companionAction === 'chat' ? "输入您的问题..." : `输入附加要求，或直接点击发送进行${companionAction === 'explain' ? '解释' : companionAction === 'translate' ? '翻译' : companionAction === 'background' ? '背景分析' : '延伸思考'}...`}
-                                className="w-full bg-gray-50 border border-transparent rounded-2xl pl-4 pr-14 py-3.5 text-[14px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white focus:border-indigo-100 transition-all placeholder:text-gray-400"
-                              />
+                    {/* AI 对话区 (常驻显示) */}
+                    <div className="w-full bg-white border border-gray-100 shadow-sm rounded-3xl p-5 flex gap-5">
+                      {/* 左侧机器人图标 */}
+                      <div className="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-200/50">
+                        <Bot size={24} />
+                      </div>
+                      
+                      {/* 右侧内容区 */}
+                      <div className="flex-1 flex flex-col min-w-0">
+                        {/* 顶部 Tabs */}
+                        <div className="flex items-center gap-6 mb-3">
+                          <span className="font-medium text-sm text-gray-800">AI 伴读</span>
+                          <div className="flex gap-6 text-sm">
+                            {['explain', 'translate', 'background', 'extend'].map(action => (
                               <button 
-                                onClick={submitCompanionRequest}
-                                disabled={isCompanionLoading || (companionAction === 'chat' && !chatInput.trim())}
-                                className="absolute right-2 w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
+                                key={action}
+                                onClick={() => handleModeSwitch(action)}
+                                className={`relative pb-1 transition-colors ${companionAction === action ? 'text-indigo-600 font-medium' : 'text-gray-400 hover:text-gray-600'}`}
                               >
-                                <Send size={18} className="ml-0.5" />
+                                {action === 'explain' ? '解释' : action === 'translate' ? '翻译' : action === 'background' ? '背景' : '延伸思考'}
+                                {companionAction === action && (
+                                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-indigo-600 rounded-full"></div>
+                                )}
                               </button>
-                            </div>
+                            ))}
                           </div>
                         </div>
-
-                        <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${!isAiChatExpanded ? 'opacity-100 pointer-events-auto delay-100' : 'opacity-0 pointer-events-none'}`}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200/50"><Bot size={18} /></div>
-                            <span className="text-[14px] font-medium text-gray-700">唤起 AI 伴读</span>
-                            <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                            <ChevronDown size={16} className="text-gray-400 rotate-180" />
-                          </div>
+                        
+                        {/* AI 回复内容 */}
+                        <div className="text-[14px] text-gray-700 leading-[1.8] mb-4 min-h-[60px] max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
+                          {isCompanionLoading ? (
+                            <div className="flex items-center gap-2 text-gray-400 h-full">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                              AI 正在思考...
+                            </div>
+                          ) : companionResult ? (
+                            renderMarkdown(companionResult)
+                          ) : (
+                            <div className="text-gray-400 flex items-center h-full">
+                              请选择上方功能或在下方输入问题与 AI 交流。
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* 输入框 */}
+                        <div className="relative flex items-center mt-auto">
+                          <input 
+                            type="text" 
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && submitCompanionRequest()}
+                            placeholder="问问这段内容..."
+                            className="w-full bg-gray-50 border border-transparent rounded-full pl-4 pr-12 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white focus:border-indigo-100 transition-all placeholder:text-gray-400"
+                          />
+                          <button 
+                            onClick={submitCompanionRequest}
+                            disabled={isCompanionLoading}
+                            className="absolute right-1.5 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
+                          >
+                            <Send size={14} className="ml-0.5" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -713,20 +748,22 @@ const App = () => {
               </main>
 
               {/* 右侧 AI 分析面板 */}
-              <RightPanel 
-                isDarkMode={isDarkMode} 
-                aiAnalysis={aiAnalysis} 
-                isLoading={isAiLoading} 
-                aiHistory={aiHistory}
-                notes={notes}
-                onTriggerAnalysis={() => {
-                  if (!currentBook) {
-                    alert("未选择书籍，无法分析");
-                    return;
-                  }
-                  fetchAiAnalysis(currentBook.id, currentChapterIndex, true);
-                }}
-              />
+              {!isFullscreen && (
+                <RightPanel 
+                  isDarkMode={isDarkMode} 
+                  aiAnalysis={aiAnalysis} 
+                  isLoading={isAiLoading} 
+                  aiHistory={aiHistory}
+                  notes={notes}
+                  onTriggerAnalysis={() => {
+                    if (!currentBook) {
+                      alert("未选择书籍，无法分析");
+                      return;
+                    }
+                    fetchAiAnalysis(currentBook.id, currentChapterIndex, true);
+                  }}
+                />
+              )}
             </div>
           </div>
         </>

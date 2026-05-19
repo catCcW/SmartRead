@@ -36,6 +36,19 @@ const RightPanel: React.FC<RightPanelProps> = ({ isDarkMode, aiAnalysis, isLoadi
 
   const data = aiAnalysis || defaultAnalysis;
 
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    let html = text
+      .replace(/^### (.*$)/gim, '<h3 class="text-[14px] font-bold text-gray-800 mt-2 mb-1">$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2 class="text-[15px] font-bold text-gray-800 mt-3 mb-1">$1</h2>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+      .replace(/\n/g, '<br/>')
+      .replace(/(?:<br\/>|^)- (.*?)(?=<br\/>|$)/g, '<li class="ml-4 list-disc">$1</li>');
+      
+    return <div dangerouslySetInnerHTML={{ __html: html }} className="markdown-content" />;
+  };
+
   return (
     <aside className={`w-[500px] flex flex-col ${isDarkMode ? 'bg-gray-900/50' : 'bg-[#F8F9FA]'} overflow-y-auto custom-scrollbar p-5 gap-5 shrink-0`}>
       {/* 顶部 Tabs */}
@@ -215,7 +228,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ isDarkMode, aiAnalysis, isLoadi
                     </div>
                   )}
                   <div className="text-sm text-gray-600 line-clamp-3 hover:line-clamp-none transition-all">
-                    {history.ai_response}
+                    {renderMarkdown(history.ai_response)}
                   </div>
                 </div>
               )) : (
