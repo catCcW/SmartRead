@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Lightbulb, BookOpen, Network, User, Edit3, ChevronRight, Maximize, MessageSquare } from 'lucide-react';
+import { Lightbulb, BookOpen, Network, User, Edit3, ChevronRight, Maximize, MessageSquare, X } from 'lucide-react';
 import MindMapViewer from './MindMapViewer';
 import MermaidViewer from './MermaidViewer';
 
 interface RightPanelProps {
   isDarkMode: boolean;
+  readerTheme?: string;
   aiAnalysis?: {
     status?: string;
     coreIdea?: string;
@@ -19,17 +20,20 @@ interface RightPanelProps {
   onTriggerAnalysis?: () => void;
   currentBookId?: number;
   currentChapterIndex?: number;
+  onClose?: () => void;
 }
 
 const RightPanel: React.FC<RightPanelProps> = ({ 
   isDarkMode, 
+  readerTheme,
   aiAnalysis, 
   isLoading, 
   aiHistory = [], 
   notes = [], 
   onTriggerAnalysis,
   currentBookId,
-  currentChapterIndex
+  currentChapterIndex,
+  onClose
 }) => {
   const [activeTab, setActiveTab] = useState('AI解读');
   const [expandedHistoryIds, setExpandedHistoryIds] = useState<Set<number>>(new Set());
@@ -168,9 +172,22 @@ graph TD
   };
 
   return (
-    <aside className={`w-full xl:w-[400px] 2xl:w-[500px] h-[40vh] xl:h-full flex flex-col ${isDarkMode ? 'bg-gray-900/50' : 'bg-[#F8F9FA]'} overflow-y-auto custom-scrollbar p-5 gap-5 shrink-0 border-t xl:border-t-0 xl:border-l border-gray-200/60`}>
+    <aside className={`absolute right-0 top-0 bottom-0 z-30 xl:relative xl:z-auto w-[320px] xl:w-[350px] 2xl:w-[400px] h-full flex flex-col shadow-2xl xl:shadow-none ${
+      isDarkMode ? 'bg-gray-900/95 xl:bg-gray-900/50 border-gray-800' : 
+      readerTheme === 'sepia' ? 'bg-[#F4ECD8]/95 xl:bg-[#F4ECD8] border-[#E6D5B8]' : 
+      'bg-[#F8F9FA]/95 xl:bg-[#F8F9FA] border-gray-200/60'
+    } backdrop-blur-md xl:backdrop-blur-none overflow-y-auto custom-scrollbar p-5 gap-5 shrink-0 border-l transition-transform duration-300`}>
+      
+      {/* 移动端关闭按钮 */}
+      <button 
+        onClick={onClose}
+        className="xl:hidden absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 transition-colors z-10"
+      >
+        <X size={20} />
+      </button>
+
       {/* 顶部 Tabs */}
-      <div className="flex items-center gap-6 border-b border-gray-200/60 pb-3 px-2">
+      <div className="flex items-center gap-6 border-b border-gray-200/60 pb-3 px-2 pr-10 xl:pr-2">
         <button 
           className={`font-medium text-sm relative ${activeTab === 'AI解读' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-800'}`}
           onClick={() => setActiveTab('AI解读')}
@@ -222,7 +239,7 @@ graph TD
         ) : (
           <>
             {/* AI 解读卡片 */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100/80 relative overflow-hidden group hover:shadow-md transition-shadow">
+            <div className={`rounded-2xl p-5 shadow-sm border relative overflow-hidden group hover:shadow-md transition-shadow ${readerTheme === 'sepia' ? 'bg-[#E8DFCC] border-[#E6D5B8]' : 'bg-white border-gray-100/80'}`}>
               <div className="flex items-center gap-2 mb-3 text-indigo-600 font-medium text-sm">
                 <Lightbulb size={16} />
                 本段核心观点
@@ -233,7 +250,7 @@ graph TD
             </div>
 
             {/* 关键概念标签 */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100/80">
+            <div className={`rounded-2xl p-5 shadow-sm border ${readerTheme === 'sepia' ? 'bg-[#E8DFCC] border-[#E6D5B8]' : 'bg-white border-gray-100/80'}`}>
               <div className="flex items-center gap-2 mb-4 text-gray-800 font-medium text-sm">
                 <BookOpen size={16} className="text-blue-500" />
                 关键概念
@@ -259,7 +276,7 @@ graph TD
 
             {/* 人物关系图 */}
             {data.characterRelations && data.characterRelations.length > 0 && (
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100/80">
+              <div className={`rounded-2xl p-5 shadow-sm border ${readerTheme === 'sepia' ? 'bg-[#E8DFCC] border-[#E6D5B8]' : 'bg-white border-gray-100/80'}`}>
                 <div className="flex items-center gap-2 mb-6 text-gray-800 font-medium text-sm">
                   <Network size={16} className="text-cyan-500" />
                   人物关系
@@ -299,7 +316,7 @@ graph TD
       {activeTab === '笔记' && (
         <>
           {/* 相关笔记 (真实数据) */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100/80">
+          <div className={`rounded-2xl p-5 shadow-sm border ${readerTheme === 'sepia' ? 'bg-[#E8DFCC] border-[#E6D5B8]' : 'bg-white border-gray-100/80'}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 text-gray-800 font-medium text-sm">
                 <Edit3 size={16} className="text-amber-500" />
@@ -325,7 +342,7 @@ graph TD
           </div>
 
           {/* AI 问答历史 */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100/80">
+          <div className={`rounded-2xl p-5 shadow-sm border ${readerTheme === 'sepia' ? 'bg-[#E8DFCC] border-[#E6D5B8]' : 'bg-white border-gray-100/80'}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 text-gray-800 font-medium text-sm">
                 <MessageSquare size={16} className="text-indigo-500" />
@@ -384,7 +401,7 @@ graph TD
       )}
 
       {activeTab === '思维导图' && (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100/80 flex-1 min-h-[400px] flex flex-col">
+        <div className={`rounded-2xl p-5 shadow-sm border flex-1 min-h-[400px] flex flex-col ${readerTheme === 'sepia' ? 'bg-[#E8DFCC] border-[#E6D5B8]' : 'bg-white border-gray-100/80'}`}>
           <div className="flex items-center gap-2 text-gray-800 font-medium text-sm mb-4">
             <Network size={16} className="text-purple-500" />
             本章思维导图

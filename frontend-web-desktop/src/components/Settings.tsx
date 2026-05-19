@@ -10,6 +10,8 @@ interface LLMConfig {
   base_url: string;
   model_name: string;
   is_active?: boolean;
+  total_prompt_tokens?: number;
+  total_completion_tokens?: number;
 }
 
 const Settings = () => {
@@ -213,6 +215,24 @@ const Settings = () => {
                       <div>
                         <h3 className="font-semibold text-gray-800 capitalize">{conf.provider}</h3>
                         <p className="text-xs text-gray-500">{conf.model_name}</p>
+                      </div>
+                    </div>
+
+                    {/* Token 消耗统计 */}
+                    <div className="mt-3 mb-4 bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">上传 Token:</span>
+                        <span className="font-medium font-mono">{conf.total_prompt_tokens?.toLocaleString() || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">输出 Token:</span>
+                        <span className="font-medium font-mono">{conf.total_completion_tokens?.toLocaleString() || 0}</span>
+                      </div>
+                      <div className="flex justify-between pt-1.5 border-t border-gray-200/60 mt-1.5">
+                        <span className="text-gray-500 font-medium">总消耗:</span>
+                        <span className="font-bold text-indigo-600 font-mono">
+                          {((conf.total_prompt_tokens || 0) + (conf.total_completion_tokens || 0)).toLocaleString()}
+                        </span>
                       </div>
                     </div>
                     

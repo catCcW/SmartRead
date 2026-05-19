@@ -30,6 +30,14 @@ const ReaderContent: React.FC<ReaderContentProps> = ({
           );
         }
 
+        if (el.type === 'title') {
+          return (
+            <h1 key={idx} className="text-3xl font-bold mb-12 text-center text-gray-900">
+              {el.content}
+            </h1>
+          );
+        }
+
         const marker = aiAnalysis?.semanticMarkers?.find((m: any) => m.paragraphIndex === idx);
         if (marker) {
           const colorMap: Record<string, { border: string, bg: string, text: string, line: string }> = {
@@ -44,7 +52,7 @@ const ReaderContent: React.FC<ReaderContentProps> = ({
           return (
             <div key={idx} data-paragraph-index={idx} className="mb-6 relative group">
               <div className={`absolute -left-6 top-1 bottom-1 w-1 rounded-full ${colors.bg} ${colors.border} border-l-2 opacity-0 group-hover:opacity-100 transition-opacity`}></div>
-              <p className="relative inline">
+              <p className="relative inline-block w-full indent-[2em] text-justify">
                 <span className={`underline decoration-2 underline-offset-4 ${colors.line}`}>{el.content}</span>
                 <span 
                   className={`ml-3 inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${colors.bg} ${colors.text} border ${colors.border} border-opacity-30 align-middle cursor-pointer hover:shadow-sm transition-shadow`}
@@ -57,7 +65,7 @@ const ReaderContent: React.FC<ReaderContentProps> = ({
           );
         }
 
-        return <p key={idx} data-paragraph-index={idx} className="mb-6">{el.content}</p>;
+        return <p key={idx} data-paragraph-index={idx} className="mb-6 indent-[2em] text-justify">{el.content}</p>;
       })}
     </>
   );

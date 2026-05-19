@@ -1,9 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  BookOpen, Edit3, Network, MessageSquare, Settings, Sun, Moon, 
-  ChevronLeft, ChevronRight, ChevronDown, Maximize, Minimize, Minus, Send, Bot, 
-  LayoutTemplate, Lightbulb, List
-} from 'lucide-react';
 import Library from './components/Library';
 import PrimaryNav from './components/PrimaryNav';
 import SecondarySidebar from './components/SecondarySidebar';
@@ -31,6 +26,11 @@ const App = () => {
   const [isAiChatExpanded, setIsAiChatExpanded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   
+  // 阅读器排版状态
+  const [fontSize, setFontSize] = useState(20);
+  const [fontFamily, setFontFamily] = useState("'SimSun', '宋体', serif");
+  const [readerTheme, setReaderTheme] = useState('light'); // 'light', 'sepia', 'dark'
+  
   // 数据状态
   const [books, setBooks] = useState<any[]>([]);
   const [currentBook, setCurrentBook] = useState<any>(null);
@@ -57,16 +57,16 @@ const App = () => {
     x: number;
     y: number;
     text: string;
-    paragraphIndex: number;
-  }>({ visible: false, x: 0, y: 0, text: '', paragraphIndex: -1 });
+    paragraphIndices: number[];
+  }>({ visible: false, x: 0, y: 0, text: '', paragraphIndices: [] });
   const [isMarking, setIsMarking] = useState(false);
   
   // 记笔记模态框状态
   const [noteModal, setNoteModal] = useState<{
     visible: boolean;
     text: string;
-    paragraphIndex: number;
-  }>({ visible: false, text: '', paragraphIndex: -1 });
+    paragraphIndices: number[];
+  }>({ visible: false, text: '', paragraphIndices: [] });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -209,19 +209,37 @@ const App = () => {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     
-    // 尝试找到选中文本所在的段落索引
-    let paragraphIndex = -1;
-    let node: Node | null = selection.anchorNode;
-    while (node && node.nodeName !== 'MAIN') {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        const idxStr = el.getAttribute('data-paragraph-index');
-        if (idxStr) {
-          paragraphIndex = parseInt(idxStr, 10);
-          break;
+    // 尝试找到选中文本覆盖的所有段落索引
+    const paragraphIndices: number[] = [];
+    
+    // 辅助函数：向上查找包含 data-paragraph-index 的元素
+    const getParagraphIndex = (node: Node | null): number => {
+      while (node && node.nodeName !== 'MAIN') {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+          const idxStr = el.getAttribute('data-paragraph-index');
+          if (idxStr) {
+            return parseInt(idxStr, 10);
+          }
         }
+        node = node.parentNode;
       }
-      node = node.parentNode;
+      return -1;
+    };
+
+    const startIdx = getParagraphIndex(range.startContainer);
+    const endIdx = getParagraphIndex(range.endContainer);
+
+    if (startIdx !== -1 && endIdx !== -1) {
+      const minIdx = Math.min(startIdx, endIdx);
+      const maxIdx = Math.max(startIdx, endIdx);
+      for (let i = minIdx; i <= maxIdx; i++) {
+        paragraphIndices.push(i);
+      }
+    } else if (startIdx !== -1) {
+      paragraphIndices.push(startIdx);
+    } else if (endIdx !== -1) {
+      paragraphIndices.push(endIdx);
     }
 
     setSelectionMenu({
@@ -229,12 +247,12 @@ const App = () => {
       x: rect.left + rect.width / 2,
       y: rect.top - 10, // 显示在选中文本上方
       text,
-      paragraphIndex
+      paragraphIndices
     });
   };
 
   const handleSemanticMark = async () => {
-    if (!currentBook || selectionMenu.paragraphIndex === -1) return;
+    if (!currentBook || selectionMenu.paragraphIndices.length === 0) return;
     
     setSelectionMenu(prev => ({ ...prev, visible: false }));
     setIsMarking(true);
@@ -246,26 +264,30 @@ const App = () => {
         body: JSON.stringify({
           book_id: currentBook.id,
           chapter_index: currentChapterIndex,
-          paragraph_index: selectionMenu.paragraphIndex,
+          paragraph_indices: selectionMenu.paragraphIndices,
           selected_text: selectionMenu.text,
           context: chapterContent?.title || ""
         }),
       });
       
       if (!res.ok) throw new Error('AI 标记失败');
-      const newMarker = await res.json();
+      const newMarkers = await res.json(); // 现在返回的是数组
       
       // 更新前端状态
       setAiAnalysis((prev: any) => {
-        if (!prev) return { semanticMarkers: [newMarker] };
-        const newMarkers = [...(prev.semanticMarkers || [])];
-        const existingIdx = newMarkers.findIndex((m: any) => m.paragraphIndex === newMarker.paragraphIndex);
-        if (existingIdx >= 0) {
-          newMarkers[existingIdx] = newMarker;
-        } else {
-          newMarkers.push(newMarker);
-        }
-        return { ...prev, semanticMarkers: newMarkers };
+        if (!prev) return { semanticMarkers: newMarkers };
+        const updatedMarkers = [...(prev.semanticMarkers || [])];
+        
+        newMarkers.forEach((newMarker: any) => {
+          const existingIdx = updatedMarkers.findIndex((m: any) => m.paragraphIndex === newMarker.paragraphIndex);
+          if (existingIdx >= 0) {
+            updatedMarkers[existingIdx] = newMarker;
+          } else {
+            updatedMarkers.push(newMarker);
+          }
+        });
+        
+        return { ...prev, semanticMarkers: updatedMarkers };
       });
       
       // 清除选中状态
@@ -298,7 +320,7 @@ const App = () => {
       
       // 刷新笔记列表
       fetchNotes(currentBook.id, currentChapterIndex);
-      setNoteModal({ visible: false, text: '', paragraphIndex: -1 });
+      setNoteModal({ visible: false, text: '', paragraphIndices: [] });
       
     } catch (error) {
       console.error("保存笔记失败:", error);
@@ -481,15 +503,20 @@ const App = () => {
   // ================= 渲染 =================
 
   return (
-    <div className={`flex h-screen w-full overflow-hidden font-sans ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#F8F9FA] text-gray-800'}`}>
+    <div className={`flex h-screen w-full overflow-hidden font-sans ${
+      isDarkMode ? 'bg-gray-900 text-gray-100' : 
+      readerTheme === 'sepia' ? 'bg-[#E8DFCC] text-[#5C4B37]' : 
+      'bg-[#F8F9FA] text-gray-800'
+    }`}>
       
-      {!isFullscreen && <PrimaryNav isDarkMode={isDarkMode} activeTab={activeTab} setActiveTab={setActiveTab} />}
+      {!isFullscreen && <PrimaryNav isDarkMode={isDarkMode} readerTheme={readerTheme} activeTab={activeTab} setActiveTab={setActiveTab} />}
 
       {activeTab === '阅读' && (
         <>
           {!isFullscreen && (
             <SecondarySidebar 
               isDarkMode={isDarkMode}
+              readerTheme={readerTheme}
               isSidebarOpen={isSidebarOpen}
               setIsSidebarOpen={setIsSidebarOpen}
               isUploading={isUploading}
@@ -509,7 +536,11 @@ const App = () => {
             />
           )}
 
-          <div className="flex-1 flex flex-col min-w-0 bg-[#F8F9FA]">
+          <div className={`flex-1 flex flex-col min-w-0 ${
+            isDarkMode ? 'bg-gray-900' : 
+            readerTheme === 'sepia' ? 'bg-[#E8DFCC]' : 
+            'bg-[#F8F9FA]'
+          }`}>
             {/* 顶部工具栏 */}
             {!isFullscreen && (
               <TopToolbar 
@@ -522,10 +553,16 @@ const App = () => {
                 isDarkMode={isDarkMode}
                 setIsDarkMode={setIsDarkMode}
                 setIsFullscreen={setIsFullscreen}
+                fontSize={fontSize}
+                setFontSize={setFontSize}
+                fontFamily={fontFamily}
+                setFontFamily={setFontFamily}
+                readerTheme={readerTheme}
+                setReaderTheme={setReaderTheme}
               />
             )}
 
-            <div className="flex-1 flex flex-col xl:flex-row overflow-hidden min-h-0">
+            <div className="flex-1 flex overflow-hidden min-h-0 relative">
               {/* 划词悬浮菜单 */}
               <SelectionMenu 
                 selectionMenu={selectionMenu}
@@ -540,8 +577,18 @@ const App = () => {
 
               {/* 中央阅读区 */}
               <main className="flex-1 flex flex-col relative z-10 min-h-0" onMouseUp={handleSelection}>
-                <div className={`flex-1 overflow-y-auto custom-scrollbar flex justify-center pt-8 transition-all duration-300 ${isAiChatExpanded ? 'pb-[380px]' : 'pb-[120px]'}`}>
-                  <div className="w-full max-w-[800px] px-14 py-12 text-[20px] leading-[2.0] text-gray-900 tracking-[0.05em] font-['SimSun','宋体','serif'] bg-white rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.04)] border border-gray-100/80 mt-auto mb-auto h-fit">
+                <div 
+                  className="flex-1 overflow-y-auto custom-scrollbar flex justify-center pt-8 transition-all duration-300"
+                  style={{ paddingBottom: isAiChatExpanded ? 'calc(min(320px, 45vh) + 60px)' : '120px' }}
+                >
+                  <div 
+                    className={`w-full max-w-[800px] px-14 py-12 leading-[2.0] tracking-[0.05em] rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.04)] border mt-auto mb-auto h-fit transition-colors duration-300 ${
+                      readerTheme === 'sepia' ? 'bg-[#F4ECD8] text-[#5C4B37] border-[#E6D5B8]' : 
+                      isDarkMode ? 'bg-gray-800 text-gray-200 border-gray-700' : 
+                      'bg-white text-gray-900 border-gray-100/80'
+                    }`}
+                    style={{ fontSize: `${fontSize}px`, fontFamily: fontFamily }}
+                  >
                     <ReaderContent 
                       chapterContent={chapterContent}
                       aiAnalysis={aiAnalysis}
@@ -551,6 +598,7 @@ const App = () => {
 
                 {/* 底部控制与 AI 区域 */}
                 <BottomControls 
+                  readerTheme={readerTheme}
                   currentBook={currentBook}
                   chapters={chapters}
                   currentChapterIndex={currentChapterIndex}
@@ -572,24 +620,33 @@ const App = () => {
                 />
               </main>
 
-              {/* 右侧/底部 AI 分析面板 */}
+              {/* 右侧 AI 分析面板 */}
               {!isFullscreen && isRightPanelOpen && (
-                <RightPanel 
-                  isDarkMode={isDarkMode} 
-                  aiAnalysis={aiAnalysis} 
-                  isLoading={isAiLoading} 
-                  aiHistory={aiHistory}
-                  notes={notes}
-                  currentBookId={currentBook?.id}
-                  currentChapterIndex={currentChapterIndex}
-                  onTriggerAnalysis={() => {
-                    if (!currentBook) {
-                      alert("未选择书籍，无法分析");
-                      return;
-                    }
-                    fetchAiAnalysis(currentBook.id, currentChapterIndex, true);
-                  }}
-                />
+                <>
+                  {/* 移动端/窄屏遮罩层 */}
+                  <div 
+                    className="xl:hidden absolute inset-0 bg-black/10 z-20 backdrop-blur-[2px] transition-opacity"
+                    onClick={() => setIsRightPanelOpen(false)}
+                  />
+                  <RightPanel 
+                    isDarkMode={isDarkMode} 
+                    readerTheme={readerTheme}
+                    aiAnalysis={aiAnalysis} 
+                    isLoading={isAiLoading} 
+                    aiHistory={aiHistory}
+                    notes={notes}
+                    currentBookId={currentBook?.id}
+                    currentChapterIndex={currentChapterIndex}
+                    onClose={() => setIsRightPanelOpen(false)}
+                    onTriggerAnalysis={() => {
+                      if (!currentBook) {
+                        alert("未选择书籍，无法分析");
+                        return;
+                      }
+                      fetchAiAnalysis(currentBook.id, currentChapterIndex, true);
+                    }}
+                  />
+                </>
               )}
             </div>
           </div>

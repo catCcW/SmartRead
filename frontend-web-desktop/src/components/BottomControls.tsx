@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronLeft, ChevronRight, Maximize, Minimize, ChevronDown, Bot, Send } from 'lucide-react';
 
 interface BottomControlsProps {
+  readerTheme?: string;
   currentBook: any;
   chapters: any[];
   currentChapterIndex: number;
@@ -23,6 +24,7 @@ interface BottomControlsProps {
 }
 
 const BottomControls: React.FC<BottomControlsProps> = ({
+  readerTheme,
   currentBook,
   chapters,
   currentChapterIndex,
@@ -43,7 +45,13 @@ const BottomControls: React.FC<BottomControlsProps> = ({
   submitCompanionRequest
 }) => {
   return (
-    <div className="absolute bottom-0 left-0 right-0 w-full flex justify-center shrink-0 bg-gradient-to-t from-[#F8F9FA] via-[#F8F9FA]/90 to-transparent pt-12 pb-6 z-20 pointer-events-none">
+    <div className={`absolute bottom-0 left-0 right-0 w-full flex justify-center shrink-0 pt-12 pb-6 z-20 pointer-events-none transition-all duration-500 ${
+      isAiChatExpanded 
+        ? 'bg-gradient-to-t from-transparent to-transparent' 
+        : readerTheme === 'sepia'
+          ? 'bg-gradient-to-t from-[#E8DFCC] via-[#E8DFCC]/90 to-transparent'
+          : 'bg-gradient-to-t from-[#F8F9FA] via-[#F8F9FA]/90 to-transparent'
+    }`}>
       <div className="w-full max-w-[720px] px-12 flex flex-col gap-6 pointer-events-auto">
         {/* 进度条 */}
         <div className="w-full flex items-center justify-between px-2 gap-4">
@@ -86,10 +94,10 @@ const BottomControls: React.FC<BottomControlsProps> = ({
         {/* AI 对话区 */}
         <div className="flex justify-center w-full relative h-[52px] z-30">
           <div 
-            className={`absolute bottom-0 border border-white/60 overflow-hidden transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col ${
+            className={`absolute bottom-0 border overflow-hidden transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col ${
               isAiChatExpanded 
-                ? 'w-full h-[320px] rounded-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.08)] bg-white/80 backdrop-blur-xl' 
-                : 'w-[180px] h-[52px] rounded-[26px] shadow-sm cursor-pointer hover:bg-white/95 hover:shadow-md bg-white/90 backdrop-blur-md'
+                ? `w-full h-[320px] max-h-[45vh] rounded-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] backdrop-blur-md ${readerTheme === 'sepia' ? 'bg-[#F4ECD8]/80 border-[#E6D5B8]' : 'bg-white/40 border-white/60'}` 
+                : `w-[180px] h-[52px] rounded-[26px] shadow-sm cursor-pointer hover:shadow-md backdrop-blur-md ${readerTheme === 'sepia' ? 'bg-[#F4ECD8]/90 hover:bg-[#F4ECD8] border-[#E6D5B8]' : 'bg-white/90 hover:bg-white/95 border-white/60'}`
             }`}
             onClick={() => !isAiChatExpanded && setIsAiChatExpanded(true)}
           >
@@ -158,7 +166,7 @@ const BottomControls: React.FC<BottomControlsProps> = ({
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && submitCompanionRequest()}
                       placeholder="问问这段内容..."
-                      className="w-full bg-gray-50 border border-transparent rounded-full pl-4 pr-12 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white focus:border-indigo-100 transition-all placeholder:text-gray-400"
+                      className="w-full bg-white/40 border border-white/50 rounded-full pl-4 pr-12 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:bg-white/70 focus:border-indigo-200 transition-all placeholder:text-gray-500"
                     />
                     <button
                       onClick={submitCompanionRequest}

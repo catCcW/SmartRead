@@ -3,6 +3,7 @@ import { LayoutTemplate, Plus, Search, ChevronDown, ChevronRight } from 'lucide-
 
 interface SecondarySidebarProps {
   isDarkMode: boolean;
+  readerTheme?: string;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (isOpen: boolean) => void;
   isUploading: boolean;
@@ -104,6 +105,7 @@ const TocNodeComponent = ({ node, currentChapterIndex, onSelect }: any) => {
 
 const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
   isDarkMode,
+  readerTheme,
   isSidebarOpen,
   setIsSidebarOpen,
   isUploading,
@@ -122,7 +124,11 @@ const SecondarySidebar: React.FC<SecondarySidebarProps> = ({
   onMoreBooksClick
 }) => {
   return (
-    <aside className={`flex flex-col border-r ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-[#FAFAFC]'} transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${isSidebarOpen ? 'w-[260px]' : 'w-0 border-r-0'}`}>
+    <aside className={`flex flex-col border-r ${
+      isDarkMode ? 'border-gray-800 bg-gray-900' : 
+      readerTheme === 'sepia' ? 'border-[#E6D5B8] bg-[#F4ECD8]' : 
+      'border-gray-200 bg-[#FAFAFC]'
+    } transition-all duration-300 ease-in-out overflow-hidden shrink-0 ${isSidebarOpen ? 'w-[260px]' : 'w-0 border-r-0'}`}>
       {/* 顶部标题 & 折叠按钮 */}
       <div className="flex items-center justify-between px-6 py-5 shrink-0 w-[260px]">
         <span className="font-bold text-[15px] tracking-wide text-gray-800">智阅 SmartRead</span>

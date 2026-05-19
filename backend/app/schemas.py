@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class BookUpdate(BaseModel):
@@ -30,7 +30,7 @@ class AICompanionRequest(BaseModel):
 class SemanticMarkRequest(BaseModel):
     book_id: int
     chapter_index: int
-    paragraph_index: int
+    paragraph_indices: List[int]
     selected_text: str
     context: str = ""
 

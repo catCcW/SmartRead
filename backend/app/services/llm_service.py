@@ -4,6 +4,7 @@ from ..database import LLMConfig
 
 class LLMService:
     def __init__(self, db: Session):
+        self.db = db
         # 获取当前激活的配置
         self.config = db.query(LLMConfig).filter(LLMConfig.is_active == True).first()
         if not self.config:
@@ -70,6 +71,17 @@ class LLMService:
                     
                 response.raise_for_status()
                 data = response.json()
+                
+                # 提取并更新 token 消耗
+                usage = data.get("usage", {})
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                
+                if prompt_tokens > 0 or completion_tokens > 0:
+                    self.config.total_prompt_tokens += prompt_tokens
+                    self.config.total_completion_tokens += completion_tokens
+                    self.db.commit()
+                
                 return data["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             print(f"LLM HTTP 错误: {e.response.text}")

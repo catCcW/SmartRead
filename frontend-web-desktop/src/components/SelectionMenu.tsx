@@ -7,21 +7,21 @@ interface SelectionMenuProps {
     x: number;
     y: number;
     text: string;
-    paragraphIndex: number;
+    paragraphIndices: number[];
   };
   setSelectionMenu: React.Dispatch<React.SetStateAction<{
     visible: boolean;
     x: number;
     y: number;
     text: string;
-    paragraphIndex: number;
+    paragraphIndices: number[];
   }>>;
   handleSemanticMark: () => void;
   isMarking: boolean;
   setNoteModal: React.Dispatch<React.SetStateAction<{
     visible: boolean;
     text: string;
-    paragraphIndex: number;
+    paragraphIndices: number[];
   }>>;
   setChatInput: (text: string) => void;
   setCompanionAction: (action: string) => void;
@@ -75,7 +75,7 @@ const SelectionMenu: React.FC<SelectionMenuProps> = ({
             setNoteModal({
               visible: true,
               text: selectionMenu.text,
-              paragraphIndex: selectionMenu.paragraphIndex
+              paragraphIndices: selectionMenu.paragraphIndices
             });
             setSelectionMenu(prev => ({ ...prev, visible: false }));
           }}

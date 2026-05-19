@@ -4,12 +4,12 @@ interface NoteModalProps {
   noteModal: {
     visible: boolean;
     text: string;
-    paragraphIndex: number;
+    paragraphIndices: number[];
   };
   setNoteModal: React.Dispatch<React.SetStateAction<{
     visible: boolean;
     text: string;
-    paragraphIndex: number;
+    paragraphIndices: number[];
   }>>;
   handleCreateNote: (content: string) => void;
 }
@@ -41,7 +41,7 @@ const NoteModal: React.FC<NoteModalProps> = ({
         <div className="flex justify-end gap-3 mt-4">
           <button 
             className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            onClick={() => setNoteModal({ visible: false, text: '', paragraphIndex: -1 })}
+            onClick={() => setNoteModal({ visible: false, text: '', paragraphIndices: [] })}
           >
             取消
           </button>

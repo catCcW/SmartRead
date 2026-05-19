@@ -89,6 +89,8 @@ class LLMConfig(Base):
     base_url = Column(String, nullable=True)
     model_name = Column(String, default="gpt-3.5-turbo")
     is_active = Column(Integer, default=0) # 0: false, 1: true (SQLite boolean)
+    total_prompt_tokens = Column(Integer, default=0)
+    total_completion_tokens = Column(Integer, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class MindMap(Base):

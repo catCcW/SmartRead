@@ -211,15 +211,6 @@ async def semantic_mark(request: SemanticMarkRequest, db: Session = Depends(get_
             
         mark_result = json.loads(cleaned_text.strip())
         
-        # 构造新的 marker
-        new_marker = {
-            "text": request.selected_text,
-            "type": mark_result.get("type", "core"),
-            "tag": mark_result.get("tag", "核心论点"),
-            "explanation": mark_result.get("explanation", ""),
-            "paragraphIndex": request.paragraph_index
-        }
-        
         # 更新缓存
         cached_analysis = db.query(AIAnalysisCache).filter(
             AIAnalysisCache.book_id == request.book_id,
@@ -234,12 +225,24 @@ async def semantic_mark(request: SemanticMarkRequest, db: Session = Depends(get_
         if "semanticMarkers" not in analysis_data:
             analysis_data["semanticMarkers"] = []
             
-        # 检查是否已经存在该段落的标记，如果存在则替换，否则追加
-        existing_idx = next((i for i, m in enumerate(analysis_data["semanticMarkers"]) if m.get("paragraphIndex") == request.paragraph_index), -1)
-        if existing_idx >= 0:
-            analysis_data["semanticMarkers"][existing_idx] = new_marker
-        else:
-            analysis_data["semanticMarkers"].append(new_marker)
+        new_markers = []
+        # 为选中的每个段落都生成一个 marker
+        for p_idx in request.paragraph_indices:
+            new_marker = {
+                "text": request.selected_text,
+                "type": mark_result.get("type", "core"),
+                "tag": mark_result.get("tag", "核心论点"),
+                "explanation": mark_result.get("explanation", ""),
+                "paragraphIndex": p_idx
+            }
+            new_markers.append(new_marker)
+            
+            # 检查是否已经存在该段落的标记，如果存在则替换，否则追加
+            existing_idx = next((i for i, m in enumerate(analysis_data["semanticMarkers"]) if m.get("paragraphIndex") == p_idx), -1)
+            if existing_idx >= 0:
+                analysis_data["semanticMarkers"][existing_idx] = new_marker
+            else:
+                analysis_data["semanticMarkers"].append(new_marker)
             
         if cached_analysis:
             cached_analysis.analysis_result = json.dumps(analysis_data, ensure_ascii=False)
@@ -253,7 +256,7 @@ async def semantic_mark(request: SemanticMarkRequest, db: Session = Depends(get_
             
         db.commit()
             
-        return new_marker
+        return new_markers
         
     except json.JSONDecodeError as e:
         print(f"JSON 解析失败: {e}\nLLM 返回内容: {response_text}")
