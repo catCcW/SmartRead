@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, BookOpen, Clock, Bot, User, Trash2, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import MindMapViewer from './MindMapViewer';
+import MermaidViewer from './MermaidViewer';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -224,6 +226,59 @@ const GlobalAIHistory: React.FC<GlobalAIHistoryProps> = ({ books, onSelectBook }
     URL.revokeObjectURL(url);
   };
 
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    // 检查是否包含 markmap 或 mermaid 块
+    const blockRegex = /```(markmap|mermaid)\n([\s\S]*?)```/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = blockRegex.exec(text)) !== null) {
+      // 添加代码块之前的普通文本
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+      }
+      // 添加代码块
+      parts.push({ type: match[1], content: match[2] });
+      lastIndex = match.index + match[0].length;
+    }
+
+    // 添加剩余的普通文本
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', content: text.substring(lastIndex) });
+    }
+
+    return (
+      <div className="markdown-content space-y-2">
+        {parts.map((part, index) => {
+          if (part.type === 'markmap') {
+            return (
+              <div key={index} className="w-full h-[300px] border border-gray-200 rounded-lg overflow-hidden my-4">
+                <MindMapViewer initialContent={part.content} readOnly={true} />
+              </div>
+            );
+          } else if (part.type === 'mermaid') {
+            return (
+              <div key={index} className="w-full border border-gray-200 rounded-lg overflow-hidden my-4 bg-white">
+                <MermaidViewer chart={part.content} />
+              </div>
+            );
+          } else {
+            let html = part.content
+              .replace(/^### (.*$)/gim, '<h3 class="text-[15px] font-bold text-gray-800 mt-3 mb-2">$1</h3>')
+              .replace(/^## (.*$)/gim, '<h2 class="text-[16px] font-bold text-gray-800 mt-4 mb-2">$1</h2>')
+              .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+              .replace(/\n/g, '<br/>')
+              .replace(/(?:<br\/>|^)- (.*?)(?=<br\/>|$)/g, '<li class="ml-4 list-disc">$1</li>');
+            return <div key={index} dangerouslySetInnerHTML={{ __html: html }} />;
+          }
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#F8F9FA] overflow-hidden">
       <header className="h-16 border-b border-gray-200/60 flex items-center justify-between px-8 bg-white shrink-0">
@@ -430,10 +485,10 @@ const GlobalAIHistory: React.FC<GlobalAIHistoryProps> = ({ books, onSelectBook }
                             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
                               <Bot size={16} />
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-indigo-600 mb-2">AI 伴读</div>
-                              <div className="text-[14px] text-gray-700 leading-relaxed whitespace-pre-wrap bg-white rounded-2xl rounded-tl-none p-4 border border-gray-100 shadow-sm">
-                                {item.ai_response}
+                              <div className="text-[14px] text-gray-700 leading-relaxed bg-white rounded-2xl rounded-tl-none p-4 border border-gray-100 shadow-sm overflow-x-auto">
+                                {renderMarkdown(item.ai_response)}
                               </div>
                             </div>
                           </div>

@@ -22,14 +22,29 @@
 *   **精确路径**: 在使用 `read_file`、`write_to_file` 或 `replace_in_file` 工具时，**必须使用包含顶级目录的完整相对路径**（例如 `backend/app/api/books.py`，而不是 `api/books.py`）。
 *   **先探索，后动手**: 如果不确定某个组件或接口的具体位置，请先使用 `search_files` 或 `list_files` 工具在对应的顶级目录（`backend/` 或 `frontend-web-desktop/`）下进行查找，确认路径后再进行修改。
 
-## 3. 开发流程规范 (Development Workflow)
+## 3. 按需读写与上下文隔离 (Task-Scoped I/O & Context Budget)
+
+*   **禁止全量读取**: 在执行具体开发任务时，**严禁**盲目读取无关或整个目录的文件。必须严格“按需读写”，只读取和修改与当前子任务直接相关的文件。
+*   **严格区分前后端读取**: 
+    *   **前端任务**: 仅读取涉及到的具体页面、组件或状态管理文件。**绝对不要**读取后端代码。
+    *   **后端任务**: 仅读取关联的 API 路由、Service、Model 或 Schema。**绝对不要**读取前端文件。
+    *   如果任务涉及全栈，必须分步骤进行，当前步骤只读取当前端的文件。
+*   **增量式理解**: 优先通过结构搜索（如查找特定函数名、组件名）来精确定位目标文件，只在必须理清上下文逻辑时才读取该文件。
+
+## 4. 开发流程规范 (Development Workflow)
 
 *   **需求理解**: 在进行重大功能开发前，请先检查 `docs/` 目录下是否有相关的设计文档（如 `SmartRead_Architecture.md`, `Semantic_Reading_Prompt_Design.md` 等），并优先阅读它们以理解上下文。
-*   **全栈协同**: 当开发一个新功能时，通常需要同时修改后端 API 和前端 UI。请按照逻辑顺序（例如：先定义 Schema -> 再写 Backend API -> 最后写 Frontend UI）分步进行，并在每一步完成后等待用户确认。
+*   **全栈协同（分步迭代）**: 当开发一个新功能时，通常需要同时修改后端 API 和前端 UI。请按照逻辑顺序分步进行（例如：步骤 1. 定义 Schema -> 步骤 2. 写 Backend API -> 步骤 3. 写 Frontend UI）。**每一步仅操作当前端的文件，完成后等待用户确认，再开启下一端的文件读写。**
 *   **数据库修改**: 如果修改了 `backend/app/database.py` 中的模型，请确保同步更新 `backend/app/schemas.py` 中对应的 Pydantic 模型，并检查相关 API 路由是否需要调整。
 
-## 4. 代码风格与约定 (Code Style & Conventions)
+## 5. 代码风格与约定 (Code Style & Conventions)
 
 *   **前端**: 使用 React (Functional Components + Hooks), TypeScript, Tailwind CSS, Lucide React Icons。
+    *   **组件拆分**: 严格避免将所有代码堆砌在 `App.tsx` 中。新增的独立功能模块（如思维导图、特定面板、工具栏、对话框等）**必须**拆分为独立的组件文件（放在 `src/components/` 下），通过 Props 传递状态，然后在 `App.tsx` 或其他父组件中引入。保持单个文件行数在合理范围内（建议不超过 500 行）。
 *   **后端**: 使用 FastAPI, SQLAlchemy (SQLite), Pydantic。
 *   **AI 交互**: 涉及大模型调用的逻辑，应封装在 `backend/app/services/llm_service.py` 中，提示词应集中管理在 `backend/app/prompts/` 目录下。
+
+## 6. 版本控制 (Version Control)
+
+*   **提交规范**: 在完成一个完整的功能模块或修复一个 Bug 后，应及时将代码提交到 Git 仓库。
+*   **提交信息**: 提交信息应清晰明了，说明本次提交修改了什么内容、解决了什么问题。

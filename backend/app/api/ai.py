@@ -228,18 +228,30 @@ async def semantic_mark(request: SemanticMarkRequest, db: Session = Depends(get_
         
         if cached_analysis:
             analysis_data = json.loads(cached_analysis.analysis_result)
-            if "semanticMarkers" not in analysis_data:
-                analysis_data["semanticMarkers"] = []
-                
-            # 检查是否已经存在该段落的标记，如果存在则替换，否则追加
-            existing_idx = next((i for i, m in enumerate(analysis_data["semanticMarkers"]) if m.get("paragraphIndex") == request.paragraph_index), -1)
-            if existing_idx >= 0:
-                analysis_data["semanticMarkers"][existing_idx] = new_marker
-            else:
-                analysis_data["semanticMarkers"].append(new_marker)
-                
+        else:
+            analysis_data = {}
+            
+        if "semanticMarkers" not in analysis_data:
+            analysis_data["semanticMarkers"] = []
+            
+        # 检查是否已经存在该段落的标记，如果存在则替换，否则追加
+        existing_idx = next((i for i, m in enumerate(analysis_data["semanticMarkers"]) if m.get("paragraphIndex") == request.paragraph_index), -1)
+        if existing_idx >= 0:
+            analysis_data["semanticMarkers"][existing_idx] = new_marker
+        else:
+            analysis_data["semanticMarkers"].append(new_marker)
+            
+        if cached_analysis:
             cached_analysis.analysis_result = json.dumps(analysis_data, ensure_ascii=False)
-            db.commit()
+        else:
+            new_cache = AIAnalysisCache(
+                book_id=request.book_id,
+                chapter_index=request.chapter_index,
+                analysis_result=json.dumps(analysis_data, ensure_ascii=False)
+            )
+            db.add(new_cache)
+            
+        db.commit()
             
         return new_marker
         

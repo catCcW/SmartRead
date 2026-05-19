@@ -12,6 +12,12 @@ import SettingsComponent from './components/Settings';
 import GlobalNotes from './components/GlobalNotes';
 import GlobalAIHistory from './components/GlobalAIHistory';
 import GlobalMindMap from './components/GlobalMindMap';
+import MindMapViewer from './components/MindMapViewer';
+import TopToolbar from './components/TopToolbar';
+import SelectionMenu from './components/SelectionMenu';
+import NoteModal from './components/NoteModal';
+import BottomControls from './components/BottomControls';
+import ReaderContent from './components/ReaderContent';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -20,6 +26,7 @@ const App = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState('阅读');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [isTocExpanded, setIsTocExpanded] = useState(true);
   const [isAiChatExpanded, setIsAiChatExpanded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -150,8 +157,11 @@ const App = () => {
       console.error("获取 AI 分析失败:", error);
       if (forceAnalyze) {
         alert(`AI 分析失败: ${error.message}\n请检查后端日志或大模型配置。`);
+      } else {
+        // 如果不是强制分析失败（例如切换章节时获取失败），才清空状态
+        // 这样可以避免在强制分析失败时，丢失用户之前手动添加的语义标记
+        setAiAnalysis(null);
       }
-      setAiAnalysis(null);
     } finally {
       setIsAiLoading(false);
     }
@@ -415,20 +425,48 @@ const App = () => {
   const renderMarkdown = (text: string) => {
     if (!text) return null;
     
-    // 简单的 Markdown 解析
-    let html = text
-      // 处理标题 ### 标题
-      .replace(/^### (.*$)/gim, '<h3 class="text-[15px] font-bold text-gray-800 mt-3 mb-1">$1</h3>')
-      // 处理标题 ## 标题
-      .replace(/^## (.*$)/gim, '<h2 class="text-base font-bold text-gray-800 mt-4 mb-2">$1</h2>')
-      // 处理加粗 **加粗**
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
-      // 处理换行
-      .replace(/\n/g, '<br/>')
-      // 处理列表项 - 列表项
-      .replace(/(?:<br\/>|^)- (.*?)(?=<br\/>|$)/g, '<li class="ml-4 list-disc">$1</li>');
-      
-    return <div dangerouslySetInnerHTML={{ __html: html }} className="markdown-content" />;
+    // 检查是否包含 markmap 块
+    const markmapRegex = /```markmap\n([\s\S]*?)```/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = markmapRegex.exec(text)) !== null) {
+      // 添加 markmap 之前的普通文本
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+      }
+      // 添加 markmap 块
+      parts.push({ type: 'markmap', content: match[1] });
+      lastIndex = match.index + match[0].length;
+    }
+
+    // 添加剩余的普通文本
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', content: text.substring(lastIndex) });
+    }
+
+    return (
+      <div className="markdown-content space-y-4">
+        {parts.map((part, index) => {
+          if (part.type === 'markmap') {
+            return (
+              <div key={index} className="w-full h-[300px] border border-gray-200 rounded-lg overflow-hidden my-4">
+                <MindMapViewer initialContent={part.content} readOnly={true} />
+              </div>
+            );
+          } else {
+            let html = part.content
+              .replace(/^### (.*$)/gim, '<h3 class="text-[15px] font-bold text-gray-800 mt-3 mb-1">$1</h3>')
+              .replace(/^## (.*$)/gim, '<h2 class="text-base font-bold text-gray-800 mt-4 mb-2">$1</h2>')
+              .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+              .replace(/\n/g, '<br/>')
+              .replace(/(?:<br\/>|^)- (.*?)(?=<br\/>|$)/g, '<li class="ml-4 list-disc">$1</li>');
+            return <div key={index} dangerouslySetInnerHTML={{ __html: html }} />;
+          }
+        })}
+      </div>
+    );
   };
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -474,287 +512,76 @@ const App = () => {
           <div className="flex-1 flex flex-col min-w-0 bg-[#F8F9FA]">
             {/* 顶部工具栏 */}
             {!isFullscreen && (
-              <header className="h-14 border-b border-gray-200/60 flex items-center justify-between px-6 text-sm text-gray-600 shrink-0 bg-white z-20">
-                <div className="flex items-center gap-2 font-medium">
-                  <div className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-gray-50 rounded-md cursor-pointer transition-colors">
-                    <span className="text-gray-800 font-bold">{currentBook?.title || "未选择书籍"}</span>
-                    <ChevronDown size={14} className="text-gray-400" />
-                  </div>
-                  <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500 cursor-pointer hover:text-gray-800 transition-colors">
-                    <div className="w-1 h-1 bg-gray-300 rotate-45 rounded-[1px]"></div>
-                    <span>{chapterContent?.title || "未选择章节"}</span>
-                    <ChevronRight size={14} className="text-gray-400" />
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-5">
-                  {!isSidebarOpen && (
-                    <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors text-indigo-500" onClick={() => setIsSidebarOpen(true)}>
-                      <LayoutTemplate size={16} /> 展开侧边栏
-                    </button>
-                  )}
-                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><LayoutTemplate size={16} /> 版式</button>
-                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors" onClick={() => setIsDarkMode(!isDarkMode)}>
-                    {isDarkMode ? <Sun size={16} /> : <Moon size={16} />} 主题
-                  </button>
-                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><span className="font-serif font-bold text-[15px]">Aa</span> 字体</button>
-                  <button className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"><List size={16} /> <ChevronDown size={12} className="text-gray-400 -ml-0.5" /></button>
-                  <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                  <button className="hover:text-gray-900"><Minus size={16} /></button>
-                  <button className="hover:text-gray-900" onClick={() => setIsFullscreen(true)}><Maximize size={14} /></button>
-                  <button className="hover:text-gray-900">✕</button>
-                </div>
-              </header>
+              <TopToolbar 
+                currentBook={currentBook}
+                chapterContent={chapterContent}
+                isSidebarOpen={isSidebarOpen}
+                setIsSidebarOpen={setIsSidebarOpen}
+                isRightPanelOpen={isRightPanelOpen}
+                setIsRightPanelOpen={setIsRightPanelOpen}
+                isDarkMode={isDarkMode}
+                setIsDarkMode={setIsDarkMode}
+                setIsFullscreen={setIsFullscreen}
+              />
             )}
 
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col xl:flex-row overflow-hidden min-h-0">
               {/* 划词悬浮菜单 */}
-              {selectionMenu.visible && (
-                <div 
-                  className="fixed z-50 bg-white rounded-full shadow-lg border border-gray-100 py-2 px-4 flex items-center gap-3 transform -translate-x-1/2 -translate-y-full -mt-2"
-                  style={{ left: selectionMenu.x, top: selectionMenu.y }}
-                >
-                  {/* 颜色选择器 */}
-                  <div className="flex items-center gap-2">
-                    <button className="w-4 h-4 rounded-full bg-[#FDE68A] hover:scale-110 transition-transform"></button>
-                    <button className="w-4 h-4 rounded-full bg-[#FECACA] hover:scale-110 transition-transform"></button>
-                    <button className="w-4 h-4 rounded-full bg-[#A7F3D0] hover:scale-110 transition-transform"></button>
-                    <button className="w-4 h-4 rounded-full bg-[#BFDBFE] hover:scale-110 transition-transform"></button>
-                    <button className="w-4 h-4 rounded-full bg-[#DDD6FE] hover:scale-110 transition-transform"></button>
-                  </div>
-                  
-                  <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                  
-                  {/* 操作图标 */}
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <button 
-                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                      title="复制"
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectionMenu.text);
-                        setSelectionMenu(prev => ({ ...prev, visible: false }));
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    </button>
-                    <button 
-                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                      title="记笔记"
-                      onClick={() => {
-                        setNoteModal({
-                          visible: true,
-                          text: selectionMenu.text,
-                          paragraphIndex: selectionMenu.paragraphIndex
-                        });
-                        setSelectionMenu(prev => ({ ...prev, visible: false }));
-                      }}
-                    >
-                      <Edit3 size={16} />
-                    </button>
-                    <button 
-                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                      title="AI 解读"
-                      onClick={() => {
-                        setChatInput(selectionMenu.text);
-                        setCompanionAction('explain');
-                        setIsAiChatExpanded(true);
-                        setSelectionMenu(prev => ({ ...prev, visible: false }));
-                      }}
-                    >
-                      <Bot size={16} />
-                    </button>
-                    <button 
-                      className="p-1 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                      title="AI 语义标记"
-                      onClick={handleSemanticMark}
-                      disabled={isMarking}
-                    >
-                      {isMarking ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
-                      ) : (
-                        <Lightbulb size={16} />
-                      )}
-                    </button>
-                    <button 
-                      className="p-1 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                      title="删除"
-                      onClick={() => setSelectionMenu(prev => ({ ...prev, visible: false }))}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    </button>
-                  </div>
-                </div>
-              )}
+              <SelectionMenu 
+                selectionMenu={selectionMenu}
+                setSelectionMenu={setSelectionMenu}
+                handleSemanticMark={handleSemanticMark}
+                isMarking={isMarking}
+                setNoteModal={setNoteModal}
+                setChatInput={setChatInput}
+                setCompanionAction={setCompanionAction}
+                setIsAiChatExpanded={setIsAiChatExpanded}
+              />
 
               {/* 中央阅读区 */}
-              <main className="flex-1 flex flex-col relative z-10" onMouseUp={handleSelection}>
-                <div className="flex-1 overflow-y-auto custom-scrollbar flex justify-center py-8">
-                  <div className="w-full max-w-[800px] px-14 py-12 text-[20px] leading-[2.0] text-gray-900 tracking-[0.05em] font-['SimSun','宋体','serif'] bg-white rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.04)] border border-gray-100/80 my-auto">
-                    {chapterContent ? (
-                      chapterContent.elements.map((el: any, idx: number) => {
-                        if (el.type === 'image') {
-                          return (
-                            <div key={idx} className="my-8 flex justify-center">
-                              <img src={`data:image/${el.ext || 'jpeg'};base64,${el.content}`} alt={`Page image ${idx}`} className="max-w-full h-auto rounded-lg shadow-sm border border-gray-100" />
-                            </div>
-                          );
-                        }
-
-                        const marker = aiAnalysis?.semanticMarkers?.find((m: any) => m.paragraphIndex === idx);
-                        if (marker) {
-                          const colorMap: Record<string, { border: string, bg: string, text: string, line: string }> = {
-                            'criticism': { border: 'border-red-400', bg: 'bg-red-50', text: 'text-red-600', line: 'decoration-red-300' },
-                            'quote': { border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-600', line: 'decoration-purple-300' },
-                            'core': { border: 'border-amber-400', bg: 'bg-amber-50', text: 'text-amber-600', line: 'decoration-amber-300' },
-                            'background': { border: 'border-blue-400', bg: 'bg-blue-50', text: 'text-blue-600', line: 'decoration-blue-300' },
-                            'definition': { border: 'border-emerald-400', bg: 'bg-emerald-50', text: 'text-emerald-600', line: 'decoration-emerald-300' }
-                          };
-                          const colors = colorMap[marker.type] || colorMap['core'];
-
-                          return (
-                            <div key={idx} data-paragraph-index={idx} className="mb-6 relative group">
-                              <div className={`absolute -left-6 top-1 bottom-1 w-1 rounded-full ${colors.bg} ${colors.border} border-l-2 opacity-0 group-hover:opacity-100 transition-opacity`}></div>
-                              <p className="relative inline">
-                                <span className={`underline decoration-2 underline-offset-4 ${colors.line}`}>{el.content}</span>
-                                <span 
-                                  className={`ml-3 inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${colors.bg} ${colors.text} border ${colors.border} border-opacity-30 align-middle cursor-pointer hover:shadow-sm transition-shadow`}
-                                  title={marker.explanation}
-                                >
-                                  <Lightbulb size={10} className="mr-1" />{marker.tag}
-                                </span>
-                              </p>
-                            </div>
-                          );
-                        }
-
-                        return <p key={idx} data-paragraph-index={idx} className="mb-6">{el.content}</p>;
-                      })
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-400 mt-20">
-                        <BookOpen size={48} className="mb-4 opacity-20" />
-                        <p>请在左侧选择书籍和章节开始阅读</p>
-                      </div>
-                    )}
+              <main className="flex-1 flex flex-col relative z-10 min-h-0" onMouseUp={handleSelection}>
+                <div className={`flex-1 overflow-y-auto custom-scrollbar flex justify-center pt-8 transition-all duration-300 ${isAiChatExpanded ? 'pb-[380px]' : 'pb-[120px]'}`}>
+                  <div className="w-full max-w-[800px] px-14 py-12 text-[20px] leading-[2.0] text-gray-900 tracking-[0.05em] font-['SimSun','宋体','serif'] bg-white rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.04)] border border-gray-100/80 mt-auto mb-auto h-fit">
+                    <ReaderContent 
+                      chapterContent={chapterContent}
+                      aiAnalysis={aiAnalysis}
+                    />
                   </div>
                 </div>
 
                 {/* 底部控制与 AI 区域 */}
-                <div className="w-full flex justify-center shrink-0 bg-[#F8F9FA]/80 backdrop-blur-md pt-2 pb-6 z-20">
-                  <div className="w-full max-w-[720px] px-12 flex flex-col gap-6">
-                    {/* 进度条 */}
-                    <div className="w-full flex items-center justify-between px-2 gap-4">
-                      <button 
-                        className="text-gray-400 hover:text-gray-800 disabled:opacity-30 transition-colors p-1"
-                        onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.max(0, currentChapterIndex - 1))}
-                        disabled={currentChapterIndex === 0}
-                        title="上一页"
-                      ><ChevronLeft size={18} /></button>
-                      
-                      <div className="flex items-center gap-4 flex-1 px-2">
-                        <span className="text-xs text-gray-500 whitespace-nowrap">{currentChapterIndex + 1} / {chapters.length || 1}页</span>
-                        
-                        <div className="flex-1 h-1.5 bg-gray-200 rounded-full relative cursor-pointer group" onClick={handleProgressClick}>
-                          <div className="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full transition-all duration-300 ease-out" style={{ width: `${progressPercent}%` }}></div>
-                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-indigo-500 rounded-full shadow-sm transition-all duration-300 ease-out group-hover:scale-125" style={{ left: `calc(${progressPercent}% - 7px)` }}></div>
-                        </div>
-                        
-                        <span className="text-xs text-gray-500 w-8 text-right">{Math.round(progressPercent)}%</span>
-                      </div>
-                      
-                      <button 
-                        className="text-gray-400 hover:text-gray-800 disabled:opacity-30 transition-colors p-1"
-                        onClick={() => currentBook && handleSelectChapter(currentBook.id, Math.min(chapters.length - 1, currentChapterIndex + 1))}
-                        disabled={currentChapterIndex === chapters.length - 1}
-                        title="下一页"
-                      ><ChevronRight size={18} /></button>
-
-                      <div className="w-px h-4 bg-gray-300 mx-1"></div>
-
-                      <button 
-                        className="text-gray-400 hover:text-gray-800 transition-colors p-1"
-                        onClick={() => setIsFullscreen(!isFullscreen)}
-                        title={isFullscreen ? "退出全屏" : "全屏阅读"}
-                      >
-                        {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
-                      </button>
-                    </div>
-
-                    {/* AI 对话区 (常驻显示) */}
-                    <div className="w-full bg-white border border-gray-100 shadow-sm rounded-3xl p-5 flex gap-5">
-                      {/* 左侧机器人图标 */}
-                      <div className="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-200/50">
-                        <Bot size={24} />
-                      </div>
-                      
-                      {/* 右侧内容区 */}
-                      <div className="flex-1 flex flex-col min-w-0">
-                        {/* 顶部 Tabs */}
-                        <div className="flex items-center gap-6 mb-3">
-                          <span className="font-medium text-sm text-gray-800">AI 伴读</span>
-                          <div className="flex gap-6 text-sm">
-                            {['explain', 'translate', 'background', 'extend'].map(action => (
-                              <button 
-                                key={action}
-                                onClick={() => handleModeSwitch(action)}
-                                className={`relative pb-1 transition-colors ${companionAction === action ? 'text-indigo-600 font-medium' : 'text-gray-400 hover:text-gray-600'}`}
-                              >
-                                {action === 'explain' ? '解释' : action === 'translate' ? '翻译' : action === 'background' ? '背景' : '延伸思考'}
-                                {companionAction === action && (
-                                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-indigo-600 rounded-full"></div>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        {/* AI 回复内容 */}
-                        <div className="text-[14px] text-gray-700 leading-[1.8] mb-4 min-h-[60px] max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
-                          {isCompanionLoading ? (
-                            <div className="flex items-center gap-2 text-gray-400 h-full">
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
-                              AI 正在思考...
-                            </div>
-                          ) : companionResult ? (
-                            renderMarkdown(companionResult)
-                          ) : (
-                            <div className="text-gray-400 flex items-center h-full">
-                              请选择上方功能或在下方输入问题与 AI 交流。
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* 输入框 */}
-                        <div className="relative flex items-center mt-auto">
-                          <input 
-                            type="text" 
-                            value={chatInput}
-                            onChange={(e) => setChatInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && submitCompanionRequest()}
-                            placeholder="问问这段内容..."
-                            className="w-full bg-gray-50 border border-transparent rounded-full pl-4 pr-12 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white focus:border-indigo-100 transition-all placeholder:text-gray-400"
-                          />
-                          <button 
-                            onClick={submitCompanionRequest}
-                            disabled={isCompanionLoading}
-                            className="absolute right-1.5 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
-                          >
-                            <Send size={14} className="ml-0.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <BottomControls 
+                  currentBook={currentBook}
+                  chapters={chapters}
+                  currentChapterIndex={currentChapterIndex}
+                  handleSelectChapter={handleSelectChapter}
+                  progressPercent={progressPercent}
+                  handleProgressClick={handleProgressClick}
+                  isFullscreen={isFullscreen}
+                  setIsFullscreen={setIsFullscreen}
+                  isAiChatExpanded={isAiChatExpanded}
+                  setIsAiChatExpanded={setIsAiChatExpanded}
+                  companionAction={companionAction}
+                  handleModeSwitch={handleModeSwitch}
+                  isCompanionLoading={isCompanionLoading}
+                  companionResult={companionResult}
+                  renderMarkdown={renderMarkdown}
+                  chatInput={chatInput}
+                  setChatInput={setChatInput}
+                  submitCompanionRequest={submitCompanionRequest}
+                />
               </main>
 
-              {/* 右侧 AI 分析面板 */}
-              {!isFullscreen && (
+              {/* 右侧/底部 AI 分析面板 */}
+              {!isFullscreen && isRightPanelOpen && (
                 <RightPanel 
                   isDarkMode={isDarkMode} 
                   aiAnalysis={aiAnalysis} 
                   isLoading={isAiLoading} 
                   aiHistory={aiHistory}
                   notes={notes}
+                  currentBookId={currentBook?.id}
+                  currentChapterIndex={currentChapterIndex}
                   onTriggerAnalysis={() => {
                     if (!currentBook) {
                       alert("未选择书籍，无法分析");
@@ -803,43 +630,11 @@ const App = () => {
       )}
 
       {/* 记笔记模态框 */}
-      {noteModal.visible && (
-        <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-xl w-[400px] p-5">
-            <h3 className="text-lg font-medium text-gray-800 mb-3">添加笔记</h3>
-            <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg mb-4 border-l-2 border-indigo-300 line-clamp-3">
-              {noteModal.text}
-            </div>
-            <textarea 
-              autoFocus
-              className="w-full h-32 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 resize-none"
-              placeholder="写下你的想法..."
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  handleCreateNote(e.currentTarget.value);
-                }
-              }}
-            ></textarea>
-            <div className="flex justify-end gap-3 mt-4">
-              <button 
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                onClick={() => setNoteModal({ visible: false, text: '', paragraphIndex: -1 })}
-              >
-                取消
-              </button>
-              <button 
-                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                onClick={(e) => {
-                  const textarea = e.currentTarget.parentElement?.previousElementSibling as HTMLTextAreaElement;
-                  handleCreateNote(textarea.value);
-                }}
-              >
-                保存 (Ctrl+Enter)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NoteModal 
+        noteModal={noteModal}
+        setNoteModal={setNoteModal}
+        handleCreateNote={handleCreateNote}
+      />
     </div>
   );
 };

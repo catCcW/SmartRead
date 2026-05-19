@@ -91,6 +91,18 @@ class LLMConfig(Base):
     is_active = Column(Integer, default=0) # 0: false, 1: true (SQLite boolean)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class MindMap(Base):
+    __tablename__ = "mindmaps"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"))
+    chapter_index = Column(Integer, nullable=True) # 如果为 null，表示全局思维导图
+    content = Column(Text) # Markdown 格式的思维导图内容
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    book = relationship("Book")
+
 # 创建表
 Base.metadata.create_all(bind=engine)
 

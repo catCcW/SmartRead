@@ -67,3 +67,22 @@ class AIChatHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class MindMapCreate(BaseModel):
+    book_id: int
+    chapter_index: Optional[int] = None
+    content: str
+
+class MindMapUpdate(BaseModel):
+    content: str
+
+class MindMapResponse(BaseModel):
+    id: int
+    book_id: int
+    chapter_index: Optional[int]
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

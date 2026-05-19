@@ -22,3 +22,19 @@
 ### 5. 初始化 Tauri + React 前端项目
 - **操作**：运行 `npm create tauri-app@latest` 初始化了 `frontend-web-desktop` 目录。
 - **结果**：项目模板创建成功。但系统提示缺少 **Rust** 依赖（Tauri 打包桌面端必需）。下一步准备安装 Rust。
+
+## 2026-05-19
+
+### 1. 前后端联调与功能完善
+- **操作**：完善了 FastAPI 后端接口，包括书籍解析（TXT, EPUB, PDF, DOCX）、AI 伴读、语义标记、笔记和思维导图功能。
+- **结果**：前后端成功连通，实现了完整的阅读和 AI 交互流程。
+
+### 2. UI 细节优化与 Bug 修复
+- **操作**：
+  - 修复了正文区域在小窗口下被底部 AI 伴读面板挤压导致无法滚动的问题。
+  - 将底部面板高度改为自适应（`40vh`），并动态调整正文底部的 padding。
+- **结果**：阅读体验更加流畅，适配不同窗口大小。
+
+### 3. 前端代码重构
+- **操作**：对臃肿的 `App.tsx` 进行了组件化拆分。
+- **结果**：抽离出了 `TopToolbar.tsx`、`SelectionMenu.tsx`、`ReaderContent.tsx`、`BottomControls.tsx` 和 `NoteModal.tsx`，大幅提升了代码的可读性和可维护性。

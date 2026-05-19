@@ -1,0 +1,45 @@
+# 依赖目录
+node_modules/
+frontend-web-desktop/node_modules/
+backend/venv/
+backend/env/
+.env
+
+# 编译和构建输出
+dist/
+build/
+frontend-web-desktop/dist/
+frontend-web-desktop/src-tauri/target/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 版本控制
+.svn/
+
+# 临时文件和缓存
+.DS_Store
+.idea/
+.vscode/
+*.log
+*.tmp
+*.temp
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 上传的媒体或大文件
+backend/uploads/
+backend/app/uploads/
+*.pdf
+*.epub
+*.docx
+*.mp4
+*.mp3
+*.png
+*.jpg
+*.jpeg
+*.gif
