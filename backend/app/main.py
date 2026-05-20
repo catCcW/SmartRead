@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
-from .api import books, reader, ai, config, notes, mindmap
+from .api import books, reader, ai, config, notes, mindmap, highlights
 
 app = FastAPI(title="SmartRead API")
 
@@ -25,6 +25,7 @@ app.include_router(ai.router, prefix="/api", tags=["ai"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
 app.include_router(mindmap.router, prefix="/api", tags=["mindmap"])
+app.include_router(highlights.router, prefix="/api", tags=["highlights"])
 
 if __name__ == "__main__":
     import uvicorn

@@ -95,14 +95,27 @@ class LLMConfig(Base):
 
 class MindMap(Base):
     __tablename__ = "mindmaps"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"))
-    chapter_index = Column(Integer, nullable=True) # 如果为 null，表示全局思维导图
+    chapter_index = Column(Integer, nullable=True) # 如果为null，表示全局思维导图
     content = Column(Text) # Markdown 格式的思维导图内容
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    book = relationship("Book")
+
+class Highlight(Base):
+    __tablename__ = "highlights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"))
+    chapter_index = Column(Integer)
+    paragraph_indices = Column(String) # 存储 JSON 格式的段落索引数组，例如 "[1, 2]"
+    text = Column(Text) # 选中的文本
+    color = Column(String) # 颜色代码，例如 "#FDE68A"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
     book = relationship("Book")
 
 # 创建表

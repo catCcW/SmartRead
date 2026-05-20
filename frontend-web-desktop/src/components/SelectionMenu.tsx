@@ -26,6 +26,7 @@ interface SelectionMenuProps {
   setChatInput: (text: string) => void;
   setCompanionAction: (action: string) => void;
   setIsAiChatExpanded: (expanded: boolean) => void;
+  handleCreateHighlight: (color: string) => void;
 }
 
 const SelectionMenu: React.FC<SelectionMenuProps> = ({
@@ -36,7 +37,8 @@ const SelectionMenu: React.FC<SelectionMenuProps> = ({
   setNoteModal,
   setChatInput,
   setCompanionAction,
-  setIsAiChatExpanded
+  setIsAiChatExpanded,
+  handleCreateHighlight
 }) => {
   if (!selectionMenu.visible) return null;
 
@@ -47,11 +49,11 @@ const SelectionMenu: React.FC<SelectionMenuProps> = ({
     >
       {/* 颜色选择器 */}
       <div className="flex items-center gap-2">
-        <button className="w-4 h-4 rounded-full bg-[#FDE68A] hover:scale-110 transition-transform"></button>
-        <button className="w-4 h-4 rounded-full bg-[#FECACA] hover:scale-110 transition-transform"></button>
-        <button className="w-4 h-4 rounded-full bg-[#A7F3D0] hover:scale-110 transition-transform"></button>
-        <button className="w-4 h-4 rounded-full bg-[#BFDBFE] hover:scale-110 transition-transform"></button>
-        <button className="w-4 h-4 rounded-full bg-[#DDD6FE] hover:scale-110 transition-transform"></button>
+        <button className="w-4 h-4 rounded-full bg-[#FDE68A] hover:scale-110 transition-transform" onClick={() => handleCreateHighlight('#FDE68A')}></button>
+        <button className="w-4 h-4 rounded-full bg-[#FECACA] hover:scale-110 transition-transform" onClick={() => handleCreateHighlight('#FECACA')}></button>
+        <button className="w-4 h-4 rounded-full bg-[#A7F3D0] hover:scale-110 transition-transform" onClick={() => handleCreateHighlight('#A7F3D0')}></button>
+        <button className="w-4 h-4 rounded-full bg-[#BFDBFE] hover:scale-110 transition-transform" onClick={() => handleCreateHighlight('#BFDBFE')}></button>
+        <button className="w-4 h-4 rounded-full bg-[#DDD6FE] hover:scale-110 transition-transform" onClick={() => handleCreateHighlight('#DDD6FE')}></button>
       </div>
       
       <div className="w-px h-4 bg-gray-200 mx-1"></div>

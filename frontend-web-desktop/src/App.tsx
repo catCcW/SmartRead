@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Library from './components/Library';
 import PrimaryNav from './components/PrimaryNav';
 import SecondarySidebar from './components/SecondarySidebar';
@@ -44,6 +44,7 @@ const App = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiHistory, setAiHistory] = useState<any[]>([]);
   const [notes, setNotes] = useState<any[]>([]);
+  const [highlights, setHighlights] = useState<any[]>([]);
   
   // AI 伴读状态
   const [companionAction, setCompanionAction] = useState('explain');
@@ -133,10 +134,11 @@ const App = () => {
       const data = await res.json();
       setChapterContent(data);
       
-      // 并行获取 AI 分析、历史记录和笔记
+      // 并行获取 AI 分析、历史记录、笔记和高亮
       fetchAiAnalysis(bookId, chapterIndex);
       fetchAiHistory(bookId, chapterIndex);
       fetchNotes(bookId, chapterIndex);
+      fetchHighlights(bookId, chapterIndex);
     } catch (error) {
       console.error("获取章节内容失败:", error);
       setChapterContent(null);
@@ -188,6 +190,18 @@ const App = () => {
       }
     } catch (error) {
       console.error("获取笔记失败:", error);
+    }
+  };
+
+  const fetchHighlights = async (bookId: number, chapterIndex: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/book/${bookId}/highlights?chapter_index=${chapterIndex}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHighlights(data);
+      }
+    } catch (error) {
+      console.error("获取高亮失败:", error);
     }
   };
 
@@ -250,6 +264,53 @@ const App = () => {
       paragraphIndices
     });
   };
+
+  const handleCreateHighlight = async (color: string) => {
+    if (!currentBook || selectionMenu.paragraphIndices.length === 0) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/highlights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book_id: currentBook.id,
+          chapter_index: currentChapterIndex,
+          paragraph_indices: selectionMenu.paragraphIndices,
+          text: selectionMenu.text,
+          color: color
+        }),
+      });
+      
+      if (!res.ok) throw new Error('保存高亮失败');
+      
+      // 刷新高亮列表
+      fetchHighlights(currentBook.id, currentChapterIndex);
+      setSelectionMenu(prev => ({ ...prev, visible: false }));
+      window.getSelection()?.removeAllRanges();
+      
+    } catch (error) {
+      console.error("保存高亮失败:", error);
+      alert("保存高亮失败，请重试");
+    }
+  };
+
+  const handleDeleteHighlight = useCallback(async (highlightId: number) => {
+    if (!currentBook) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/highlights/${highlightId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!res.ok) throw new Error('删除高亮失败');
+      
+      // 刷新高亮列表
+      fetchHighlights(currentBook.id, currentChapterIndex);
+    } catch (error) {
+      console.error("删除高亮失败:", error);
+      alert("删除高亮失败，请重试");
+    }
+  }, [currentBook, currentChapterIndex]);
 
   const handleSemanticMark = async () => {
     if (!currentBook || selectionMenu.paragraphIndices.length === 0) return;
@@ -573,6 +634,7 @@ const App = () => {
                 setChatInput={setChatInput}
                 setCompanionAction={setCompanionAction}
                 setIsAiChatExpanded={setIsAiChatExpanded}
+                handleCreateHighlight={handleCreateHighlight}
               />
 
               {/* 中央阅读区 */}
@@ -592,6 +654,8 @@ const App = () => {
                     <ReaderContent 
                       chapterContent={chapterContent}
                       aiAnalysis={aiAnalysis}
+                      highlights={highlights}
+                      onDeleteHighlight={handleDeleteHighlight}
                     />
                   </div>
                 </div>

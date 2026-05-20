@@ -86,3 +86,22 @@ class MindMapResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class HighlightCreate(BaseModel):
+    book_id: int
+    chapter_index: int
+    paragraph_indices: List[int]
+    text: str
+    color: str
+
+class HighlightResponse(BaseModel):
+    id: int
+    book_id: int
+    chapter_index: int
+    paragraph_indices: List[int]
+    text: str
+    color: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
